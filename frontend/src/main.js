@@ -13,39 +13,120 @@ import { showError } from './ui/showError.js';
 
 import * as bootstrap from 'bootstrap';
 
-document.querySelector('#visualize')
-  .addEventListener('click', async () => {
+const BACKEND_URL = 'http://localhost:8000';
 
-    // get input
-    const raw = document.querySelector('#input').value;
+function setDecomposeStatus(message, isError = false) {
+  const el = document.querySelector('#decomposeStatus');
+  if (!el) return;
+
+  el.textContent = message || '';
+  el.classList.toggle('text-danger', isError);
+  el.classList.toggle('text-secondary', !isError);
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;');
+}
+
+function renderValidationErrors(errors = []) {
+  const container = document.querySelector('#validationErrors');
+  if (!container) return;
+
+  if (!errors.length) {
+    container.innerHTML = '<div class="text-success">No schema validation errors.</div>';
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="text-danger" style="white-space: pre-wrap;">
+      ${errors.map((line) => escapeHtml(line)).join('<br>')}
+    </div>
+  `;
+}
+
+async function visualizeTTL() {
+  const raw = document.querySelector('#input').value;
+
+  try {
+    let content;
 
     try {
-
-      // extract components to visualize
-      let content;
-      try {
-        content = await extract(raw);
-      } catch (e) {
-        console.error(e);
-        showError('#svg', e, 'Parsing', raw);
-        return;
-      }
-
-      // trigger a redraw
-      triggerRedraw(content[0]);
-
-      // add editor
-      await addEditor();
-
-      // enable export button
-      document.querySelector('#export').classList.remove('invisible');
-
+      content = await extract(raw);
     } catch (e) {
       console.error(e);
-      showError('#svg', e, 'Rendering', raw);
+      showError('#svg', e, 'Parsing', raw);
+      return;
     }
 
+    triggerRedraw(content[0]);
+    await addEditor();
+    document.querySelector('#export').classList.remove('invisible');
+
+  } catch (e) {
+    console.error(e);
+    showError('#svg', e, 'Rendering', raw);
+  }
+}
+
+async function decomposeDefinition() {
+  const definition = document.querySelector('#definitionInput')?.value?.trim();
+  const rawOutputEl = document.querySelector('#rawOutput');
+  const ttlEl = document.querySelector('#input');
+
+  if (!definition) {
+    renderValidationErrors(['Please enter a variable definition first.']);
+    setDecomposeStatus('Missing input.', true);
+    return;
+  }
+
+  if (rawOutputEl) rawOutputEl.value = '';
+  if (ttlEl) ttlEl.value = '';
+  renderValidationErrors([]);
+  setDecomposeStatus('Decomposing...');
+
+  try {
+    const response = await fetch(`${BACKEND_URL}/decompose`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ definition }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.detail || 'Backend request failed.');
+    }
+
+    if (rawOutputEl) {
+      rawOutputEl.value = data.raw_llm_output || '';
+    }
+
+    if (ttlEl) {
+      ttlEl.value = data.ttl || '';
+    }
+
+    renderValidationErrors(data.validation_errors || []);
+    setDecomposeStatus('Decomposition finished.');
+  } catch (e) {
+    console.error(e);
+    renderValidationErrors([e.message || 'Unknown backend error.']);
+    setDecomposeStatus('Decomposition failed.', true);
+  }
+}
+
+document.querySelector('#decompose')
+  ?.addEventListener('click', async () => {
+    await decomposeDefinition();
   });
+
+document.querySelector('#visualize')
+  ?.addEventListener('click', async () => {
+    await visualizeTTL();
+  });
+
 // ---- PRELOAD TTL FROM URL (optional) ----
 const url = new URL(window.location.href);
 if (url.searchParams.has('ttl')) {
@@ -54,21 +135,21 @@ if (url.searchParams.has('ttl')) {
   if (input) input.value = ttl;
 }
 
-document.querySelector('#visualize').click();
+// Only auto-visualize if some TTL is already present.
+const initialTTL = document.querySelector('#input')?.value?.trim();
+if (initialTTL) {
+  document.querySelector('#visualize')?.click();
+}
 
 document.querySelector('#export')
-  .addEventListener('click', async (e) => {
-    // only trigger on options not the select itself
-    if (e.target.tagName.toUpperCase() != 'A') {
+  ?.addEventListener('click', async (e) => {
+    if (e.target.tagName.toUpperCase() !== 'A') {
       return;
     }
 
     try {
-
-      // output depends on type
       let blob, ext;
       switch (e.target.dataset.format) {
-
         case 'svg':
           blob = getSVGBlob();
           ext = 'svg';
@@ -84,16 +165,14 @@ document.querySelector('#export')
           ext = 'ttl';
           break;
 
-        default: throw Error('Unknown export format!');
-
+        default:
+          throw Error('Unknown export format!');
       }
 
-      // get iri and derive filename from it
       const svg = document.querySelector('#svg');
-      const iri = svg.dataset.iri;
+      const iri = svg.dataset.iri || 'visualization';
       const filename = iri.split(/[/#]/).pop() + '.' + ext;
 
-      // trigger download
       const dlURL = URL.createObjectURL(blob);
       const downloadLink = document.createElement('a');
       downloadLink.href = dlURL;
@@ -107,30 +186,25 @@ document.querySelector('#export')
     }
   });
 
-
 /* XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX ORDER XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX */
 
 document.querySelector('#order kbd')
-  .addEventListener('click', () => {
-    document.querySelector('.orderDialog').classList.remove('hidden');
+  ?.addEventListener('click', () => {
+    document.querySelector('.orderDialog')?.classList.remove('hidden');
   });
 
 document.querySelector('.orderDialog button')
-  .addEventListener('click', () => {
-
-    // update selection
+  ?.addEventListener('click', () => {
     const order = Array.from(document.querySelectorAll('.orderDialog .dropzone .concept'))
       .map((el) => el.dataset.id)
       .join('')
       .toUpperCase();
+
     document.querySelector('#order kbd').innerHTML = order;
     document.querySelector('#order input').value = order;
 
-    // trigger redraw
-    document.querySelector('#visualize').click();
-
-    // close dialog
-    document.querySelector('.orderDialog').classList.add('hidden');
+    document.querySelector('#visualize')?.click();
+    document.querySelector('.orderDialog')?.classList.add('hidden');
   });
 
 // drag & drop
@@ -141,12 +215,7 @@ for (const el of document.querySelectorAll('.orderDialog .concept')) {
   el.addEventListener('dragend', dragEnd);
 }
 
-
-function dragEnd(e) {
-  // if( e.target.parentNode == draggedItem.parentNode ) {
-  //   console.log( e.target, draggedItem );
-  //   e.target.parentNode.insertBefore( draggedItem, e.target );
-  // }
+function dragEnd() {
   draggedItem = null;
 }
 

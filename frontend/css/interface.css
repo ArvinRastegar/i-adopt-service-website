@@ -1,29 +1,114 @@
 body {
   text-align: center;
+  min-height: 100vh;
 }
+
+.page-header {
+  padding: 2rem 1rem 1rem;
+}
+
+.page-header h1 {
+  margin-bottom: 0.5rem;
+}
+
+.subtitle {
+  margin: 0 auto;
+  max-width: 900px;
+  opacity: 0.85;
+}
+
+.page-content {
+  padding-bottom: 3rem;
+}
+
+.decompose-panel,
+.visualizer-panel {
+  max-width: 1200px;
+  margin: 0 auto 2rem;
+}
+
+.decompose-panel .card-body {
+  text-align: left;
+}
+
+.section-title {
+  margin-bottom: 1.25rem;
+}
+
+.action-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
 svg {
   width: 60%;
   min-width: 600px;
-  background-color: RGBA(248, 249, 250, var(--bs-bg-opacity, 1));
+  background-color: rgba(248, 249, 250, var(--bs-bg-opacity, 1));
   border-radius: 5px;
 }
 
 textarea {
-  width: 80%;
-  height: 300px;
   font-size: 70%;
 }
 
+#definitionInput,
+#rawOutput,
+#input {
+  width: 100%;
+}
+
+#definitionInput {
+  min-height: 120px;
+}
+
+#rawOutput {
+  min-height: 220px;
+}
+
+#input {
+  min-height: 320px;
+}
+
+.validation-box {
+  min-height: 130px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-x: auto;
+}
+
+.ttl-panel {
+  text-align: left;
+}
+
+.visualizer-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 1.25rem 0;
+}
+
 button {
-  margin: 1em;
+  margin: 0;
   font-size: 150%;
+}
+
+#decomposeStatus {
+  font-size: 0.95rem;
+}
+
+#svg {
+  margin-top: 1.5rem;
 }
 
 #helper {
   visibility: hidden;
   position: fixed;
-  top: -100;
-  left: -100;
+  top: -100px;
+  left: -100px;
 }
 
 #order {
@@ -49,7 +134,7 @@ kbd {
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba( 0, 0, 0, 0.7 );
+  background-color: rgba(0, 0, 0, 0.7);
 
   display: flex;
   align-items: center;
@@ -80,6 +165,7 @@ kbd {
   flex-direction: column;
   align-items: center;
 }
+
 .concept {
   width: 10em;
   margin: 0.5em;
@@ -91,8 +177,58 @@ kbd {
   border-radius: 3px;
 }
 
-.concept.property { background: var(--color-property-light);  border-color: var(--color-property-dark); }
-.concept.ooi {      background: var(--color-ooi-main);        border-color: var(--color-entity-dark); }
-.concept.matrix {   background: var(--color-matrix-main);     border-color: var(--color-entity-dark); }
-.concept.context {  background: var(--color-context-main);    border-color: var(--color-entity-dark); }
-.concept.statmod {  background: var(--color-statmod-light);   border-color: var(--color-statmod-dark); }
+.concept.property {
+  background: var(--color-property-light);
+  border-color: var(--color-property-dark);
+}
+
+.concept.ooi {
+  background: var(--color-ooi-main);
+  border-color: var(--color-entity-dark);
+}
+
+.concept.matrix {
+  background: var(--color-matrix-main);
+  border-color: var(--color-entity-dark);
+}
+
+.concept.context {
+  background: var(--color-context-main);
+  border-color: var(--color-entity-dark);
+}
+
+.concept.statmod {
+  background: var(--color-statmod-light);
+  border-color: var(--color-statmod-dark);
+}
+
+@media (max-width: 992px) {
+  svg {
+    width: 100%;
+    min-width: 0;
+  }
+
+  button {
+    font-size: 115%;
+  }
+}
+
+@media (max-width: 768px) {
+  .page-header {
+    padding-top: 1.25rem;
+  }
+
+  .visualizer-controls {
+    flex-direction: column;
+  }
+
+  #order {
+    padding: 0;
+  }
+
+  #definitionInput,
+  #rawOutput,
+  #input {
+    min-width: 0;
+  }
+}

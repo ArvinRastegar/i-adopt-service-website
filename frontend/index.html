@@ -4,25 +4,65 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>I-Adopt Variable Visualizer</title>
+  <title>I-ADOPT Variable Decomposition & Visualizer</title>
 </head>
 
 <body data-bs-theme="dark">
-  <h1>I-ADOPT Visualizer</h1>
+  <header class="page-header">
+    <h1>I-ADOPT Variable Decomposition & Visualizer</h1>
+    <p class="subtitle">
+      Enter a variable definition, decompose it with the backend pipeline, inspect the output, and visualize the
+      generated Turtle.
+    </p>
+  </header>
 
-  <div class="container-xl">
+  <main class="container-xl page-content">
 
-    <nav>
-      <div class="nav nav-tabs justify-content-center mb-3" role="tablist">
-        <button class="nav-link active" id="rdf-tab" data-bs-toggle="tab" data-bs-target="#rdf-tab-pane" type="button"
-          role="tab" aria-controls="rdf-tab-pane" aria-selected="true">RDF</button>
+    <section class="decompose-panel card mb-4">
+      <div class="card-body">
+        <h2 class="section-title">1. Variable decomposition</h2>
+
+        <div class="mb-4 text-start">
+          <label for="definitionInput" class="form-label">Variable definition</label>
+          <textarea id="definitionInput" class="form-control font-monospace" rows="4"
+            placeholder="Example: My system is measuring air temperature at a height of 1.7m"></textarea>
+        </div>
+
+        <div class="action-row mb-4">
+          <button id="decompose" class="btn btn-primary" type="button">Decompose</button>
+          <span id="decomposeStatus" class="text-secondary"></span>
+        </div>
+
+        <div class="mb-4 text-start">
+          <label for="rawOutput" class="form-label">Raw LLM output</label>
+          <textarea id="rawOutput" class="form-control font-monospace" rows="10" readonly
+            placeholder="The raw response from the backend will appear here."></textarea>
+        </div>
+
+        <div class="text-start">
+          <label for="validationErrors" class="form-label">JSON schema validation errors</label>
+          <div id="validationErrors" class="form-control validation-box" aria-live="polite">
+            <div class="text-secondary">Validation results will appear here.</div>
+          </div>
+        </div>
       </div>
-    </nav>
+    </section>
 
-    <div class="tab-content">
-      <div class="tab-pane fade show active" id="rdf-tab-pane" role="tabpanel" aria-labelledby="rdf-tab" tabindex="0">
+    <section class="visualizer-panel">
+      <nav>
+        <div class="nav nav-tabs justify-content-center mb-3" role="tablist">
+          <button class="nav-link active" id="rdf-tab" data-bs-toggle="tab" data-bs-target="#rdf-tab-pane" type="button"
+            role="tab" aria-controls="rdf-tab-pane" aria-selected="true">
+            Generated TTL
+          </button>
+        </div>
+      </nav>
 
-        <textarea id="input" class="font-monospace">
+      <div class="tab-content">
+        <div class="tab-pane fade show active" id="rdf-tab-pane" role="tabpanel" aria-labelledby="rdf-tab" tabindex="0">
+          <div class="ttl-panel">
+            <label for="input" class="form-label text-start d-block">Generated TTL</label>
+            <textarea id="input" class="form-control font-monospace" rows="14">
 @prefix ex: <http://example.org/iadopt/challenge/> .
 @prefix iop: <https://w3id.org/iadopt/ont/> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
@@ -73,36 +113,39 @@ ex:Matrix_SysA
 ex:Matrix_SysB
     a iop:Entity ;
     rdfs:label "System Component B" .
-          </textarea>
-
+            </textarea>
+          </div>
+        </div>
       </div>
-    </div>
 
+      <div class="visualizer-controls">
+        <div id="order" title="Display order of components">
+          Order: <kbd>POMSC</kbd>
+          <input type="hidden" value="POMSC" />
+        </div>
 
-    <div id="order" title="Display order of components">
-      Order: <kbd>POMSC</kbd>
-      <input type="hidden" value="POMSC" />
-    </div>
-    <button id="visualize" class="btn btn-primary">Visualize!</button>
+        <button id="visualize" class="btn btn-primary" type="button">Visualize</button>
 
-    <pre id="dev"></pre>
-    <div class="container-lg" id="svg"></div>
-    <div class="dropdown invisible" id="export">
-      <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-        Export
-      </button>
-      <ul class="dropdown-menu">
-        <li><a class="dropdown-item" href="#" data-format="svg">SVG</a></li>
-        <li><a class="dropdown-item" href="#" data-format="png">PNG</a></li>
-        <li><a class="dropdown-item" href="#" data-format="ttl">Turtle</a></li>
-      </ul>
-    </div>
-    <div>
-    </div>
-    <div id="helper">
-      <svg><text></text></svg>
-    </div>
-  </div>
+        <div class="dropdown invisible" id="export">
+          <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+            Export
+          </button>
+          <ul class="dropdown-menu">
+            <li><a class="dropdown-item" href="#" data-format="svg">SVG</a></li>
+            <li><a class="dropdown-item" href="#" data-format="png">PNG</a></li>
+            <li><a class="dropdown-item" href="#" data-format="ttl">Turtle</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <pre id="dev"></pre>
+      <div class="container-lg" id="svg"></div>
+
+      <div id="helper">
+        <svg><text></text></svg>
+      </div>
+    </section>
+  </main>
 
   <div class="editor hidden">
     <form>
@@ -169,10 +212,9 @@ ex:Matrix_SysB
   </div>
 
   <div class="dialog orderDialog hidden">
-
     <div class="content">
       <h1>Select Order</h1>
-      <p class="helper">Drag&Drop fields into the desired order</p>
+      <p class="helper">Drag&amp;Drop fields into the desired order</p>
 
       <div class="dropzone">
         <div class="concept property" draggable="true" data-id="p">Property</div>
@@ -183,10 +225,11 @@ ex:Matrix_SysB
       </div>
 
       <div class="action">
-        <button class="btn btn-primary">Close</button>
+        <button class="btn btn-primary" type="button">Close</button>
       </div>
     </div>
   </div>
+
   <script type="module" src="/src/main.js"></script>
 </body>
 

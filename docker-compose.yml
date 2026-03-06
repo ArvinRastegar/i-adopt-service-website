@@ -1,7 +1,20 @@
 services:
   backend:
-    build: ./backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: iadopt-backend
     env_file:
       - .env
     ports:
       - "8000:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: iadopt-frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
