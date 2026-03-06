@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>I-Adopt Variable Visualizer</title>
+</head>
+
+<body data-bs-theme="dark">
+  <h1>I-ADOPT Visualizer</h1>
+
+  <div class="container-xl">
+
+    <nav>
+      <div class="nav nav-tabs justify-content-center mb-3" role="tablist">
+        <button class="nav-link active" id="rdf-tab" data-bs-toggle="tab" data-bs-target="#rdf-tab-pane" type="button"
+          role="tab" aria-controls="rdf-tab-pane" aria-selected="true">RDF</button>
+      </div>
+    </nav>
+
+    <div class="tab-content">
+      <div class="tab-pane fade show active" id="rdf-tab-pane" role="tabpanel" aria-labelledby="rdf-tab" tabindex="0">
+
+        <textarea id="input" class="font-monospace">
+@prefix ex: <http://example.org/iadopt/challenge/> .
+@prefix iop: <https://w3id.org/iadopt/ont/> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+ex:someVar a iop:Variable ;
+    rdfs:label "some example variable" ;
+    rdfs:comment "used to illustrate the capabilities of the I-Adopt Visualizer" ;
+    iop:hasConstraint [
+      a iop:Constraint ;
+      rdfs:label "some constraint" ;
+      iop:constrains ex:Matrix_SysA
+    ], [
+      a iop:Constraint ;
+      rdfs:label "other constraint" ;
+      iop:constrains ex:Matrix_SysB
+    ], [
+      a iop:Constraint ;
+      rdfs:label "one more constraint" ;
+      iop:constrains ex:StatMod
+    ] ;
+    iop:hasMatrix ex:Matrix ;
+    iop:hasObjectOfInterest ex:OoI ;
+    iop:hasStatisticalModifier ex:StatMod ;
+    iop:hasProperty ex:Prop .
+
+ex:Matrix
+    a iop:Entity, iop:System ;
+    rdfs:label "vegetation-soil system" ;
+    iop:hasSource ex:Matrix_SysA;
+    iop:hasTarget ex:Matrix_SysB.
+
+ex:OoI
+    a iop:Entity ;
+    rdfs:label "Object of Interest" .
+
+ex:StatMod
+    a iop:StatisticalModifier ;
+    rdfs:label "Statistical Modifier" .
+
+ex:Prop
+    a iop:Property ;
+    rdfs:label "Property" .
+
+ex:Matrix_SysA
+    a iop:Entity ;
+    rdfs:label "System Component A" .
+
+ex:Matrix_SysB
+    a iop:Entity ;
+    rdfs:label "System Component B" .
+          </textarea>
+
+      </div>
+    </div>
+
+
+    <div id="order" title="Display order of components">
+      Order: <kbd>POMSC</kbd>
+      <input type="hidden" value="POMSC" />
+    </div>
+    <button id="visualize" class="btn btn-primary">Visualize!</button>
+
+    <pre id="dev"></pre>
+    <div class="container-lg" id="svg"></div>
+    <div class="dropdown invisible" id="export">
+      <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+        Export
+      </button>
+      <ul class="dropdown-menu">
+        <li><a class="dropdown-item" href="#" data-format="svg">SVG</a></li>
+        <li><a class="dropdown-item" href="#" data-format="png">PNG</a></li>
+        <li><a class="dropdown-item" href="#" data-format="ttl">Turtle</a></li>
+      </ul>
+    </div>
+    <div>
+    </div>
+    <div id="helper">
+      <svg><text></text></svg>
+    </div>
+  </div>
+
+  <div class="editor hidden">
+    <form>
+      <select class="form-select" aria-label="Component type" id="editor-type">
+        <option value="ContextObject">Context Object</option>
+        <option value="Constraint">Constraint</option>
+        <option value="Matrix">Matrix</option>
+        <option value="OoI">Object of Interest</option>
+        <option value="Property">Property</option>
+        <option value="StatisticalModifier">Statistical Modifier</option>
+        <option value="SystemComponent">System Component</option>
+        <option value="Variable">Variable</option>
+      </select>
+
+      <section class="mb-3">
+        <label class="form-label" for="editor-label">Label</label>
+        <input type="text" class="form-control" id="editor-label" />
+      </section>
+
+      <section class="mb-3">
+        <label class="form-label" for="editor-iri">IRI</label>
+        <input type="text" class="form-control" id="editor-iri" />
+      </section>
+
+      <section class="mb-3">
+        <label class="form-label" for="editor-desc">Description</label>
+        <textarea class="form-control" id="editor-desc"></textarea>
+      </section>
+
+      <section class="mb-3 editor-ent-type-section">
+        <label class="form-label">Type</label>
+        <div class="form-control">
+          <div class="even-space">
+            <div class="form-check">
+              <label class="form-check-label">
+                <input class="form-check-input" type="radio" name="editor-ent-type" value="simple" checked />
+                simple
+              </label>
+            </div>
+            <div class="form-check">
+              <label class="form-check-label">
+                <input class="form-check-input" type="radio" name="editor-ent-type" value="asym" />
+                asymmetric system
+              </label>
+            </div>
+            <div class="form-check">
+              <label class="form-check-label">
+                <input class="form-check-input" type="radio" name="editor-ent-type" value="sym" />
+                symmetric system
+              </label>
+            </div>
+          </div>
+
+          <select class="form-select hidden" aria-label="Properties for asymmetric system" id="editor-ent-type-props">
+          </select>
+        </div>
+      </section>
+
+      <div>
+        <button type="button" id="editor-save" class="btn btn-primary">Save</button>
+        <button type="button" id="editor-cancel" class="btn btn-secondary">Cancel</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="dialog orderDialog hidden">
+
+    <div class="content">
+      <h1>Select Order</h1>
+      <p class="helper">Drag&Drop fields into the desired order</p>
+
+      <div class="dropzone">
+        <div class="concept property" draggable="true" data-id="p">Property</div>
+        <div class="concept ooi"      draggable="true" data-id="o">ObjectOfInterest</div>
+        <div class="concept matrix"   draggable="true" data-id="m">Matrix</div>
+        <div class="concept context"  draggable="true" data-id="c">ContextObject</div>
+        <div class="concept statmod"  draggable="true" data-id="s">Statistical Modifier</div>
+      </div>
+
+      <div class="action">
+        <button class="btn btn-primary">Close</button>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+
+</html>

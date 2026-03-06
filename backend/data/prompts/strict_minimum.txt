@@ -1,0 +1,21 @@
+Follow the JSON-Schema exactly. Do not infer or invent new concepts.
+
+definition must be exactly the same string as provided.
+comment = short summary of the definition. Do not add new ideas.
+
+hasProperty = the main measurable property in the definition.
+hasObjectOfInterest = the thing that has this property.
+hasMatrix = the medium in which the object occurs. Never a method or location.
+
+If a required key is not in the definition, output an empty string for it.
+
+Output only the JSON object.
+
+Additional rules:
+
+• Only extract what is explicitly stated in the definition.
+• hasProperty = the main measurable characteristic.
+• hasObjectOfInterest = the thing that has that characteristic.
+• hasMatrix = medium the object is in, only if directly stated.
+• hasConstraint = only conditions explicitly stated.
+• If unsure: leave it empty. Do not guess.

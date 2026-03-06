@@ -1,0 +1,19 @@
+{
+  "label": "BPM Mean heart rate",
+  "definition": "BPM mean heart rate (beats per minute, ECG-derived)",
+  "comment": "contractions; patient; mean; frequency; type: heart; ADD:patient",
+  "hasProperty": "frequency",
+  "hasPropertyURI": "https://www.wikidata.org/wiki/Q11652",
+  "hasStatisticalModifier": "mean",
+  "hasStatisticalModifierURI": "https://www.wikidata.org/wiki/Q2796622",
+  "hasMatrix": "person",
+  "hasMatrixURI": "https://www.wikidata.org/wiki/Q5",
+  "hasObjectOfInterest": "contractions",
+  "hasObjectOfInterestURI": "https://www.wikidata.org/wiki/Q127006",
+  "hasConstraint": [
+    {
+      "label": "type: heart",
+      "on": "contractions"
+    }
+  ]
+}

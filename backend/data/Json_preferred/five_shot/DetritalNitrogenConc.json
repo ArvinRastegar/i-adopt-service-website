@@ -1,0 +1,27 @@
+{
+  "label": "Labile detrital nitrogen concentration in the seabed",
+  "definition": "Labile detrital nitrogen concentration in the seabed in mmoleN/kg in sediment.",
+  "comment": "Labile detrital nitrogen concentration in the seabed in mmoleN/kg in sediment.",
+  "hasProperty": "amount of substance per mass",
+  "hasMatrix": "sea",
+  "hasMatrixURI": "https://www.wikidata.org/wiki/Q165",
+  "hasObjectOfInterest": {
+    "AsymmetricSystem": "ne153df0dd6464b96b6647879820824c9b1",
+    "hasSource": "nitrogen",
+    "hasTarget": "sediment"
+  },
+  "hasConstraint": [
+    {
+      "label": "original: detrital organic matter",
+      "on": "nitrogen"
+    },
+    {
+      "label": "state: labile",
+      "on": "nitrogen"
+    },
+    {
+      "label": "location: seabed",
+      "on": "sediment"
+    }
+  ]
+}

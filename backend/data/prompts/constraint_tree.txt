@@ -1,0 +1,61 @@
+Follow the JSON-Schema exactly. Do not infer or invent new concepts.
+
+definition must be exactly the same string as provided.
+comment = short summary of the definition. Do not add new ideas.
+
+hasProperty = the main measurable property in the definition.
+hasObjectOfInterest = the thing that has this property.
+hasMatrix = the medium in which the object occurs. Never a method or location.
+
+If a required key is not in the definition, output an empty string for it.
+
+Output only the JSON object.
+
+Extraction order:
+
+1. Copy definition exactly.
+2. Extract hasProperty (main measurable characteristic).
+3. Extract hasObjectOfInterest (entity with that property).
+4. Extract hasMatrix only if the definition states a medium.
+5. Extract hasConstraint last:
+   • Only explicit limiting phrases.
+   • label = short phrase
+   • on = EXACT string from hasProperty or an entity
+6. Never paraphrase or introduce new concepts.
+
+hasConstraint rules (STRICT):
+
+• Only include constraints that are explicitly stated in the definition.
+• Each constraint MUST have:
+  - "label": the constraint text exactly as stated (or a minimal paraphrase if needed for grammar, but do not add ideas)
+  - "on": MUST be one of the allowed constraint types listed below (exact string match).
+• If you cannot map a constraint to one of the allowed types, DO NOT include it (omit it).
+• Do NOT output any other constraint types. Do NOT invent new ones.
+
+Allowed hasConstraint.on values (only these):
+- size
+- material type
+- type
+- sampling frequency
+- location
+- datum
+- layer
+- condition
+- due to
+- interpretation
+- spatial extent
+- temporal extent
+- state
+- role
+- time
+- origin
+- spatial distribution
+- range
+- threshold
+- reporting frequency
+- quality
+- defined by
+- composition
+- quantity
+- via
+- interval

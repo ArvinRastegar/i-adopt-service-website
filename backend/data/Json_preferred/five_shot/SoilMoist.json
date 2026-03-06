@@ -1,0 +1,18 @@
+{
+  "label": "Moisture in upper soil portion",
+  "definition": "Moisture in upper soil portion measured in kg m-2",
+  "comment": "Moisture in upper soil portion measured in kg m-2",
+  "hasProperty": "surface density",
+  "hasPropertyURI": "https://www.wikidata.org/wiki/Q1907514",
+  "hasObjectOfInterest": {
+    "AsymmetricSystem": "n69c6011b6cba4496b256dde1a4b5494fb1",
+    "hasSource": "water",
+    "hasTarget": "soil"
+  },
+  "hasConstraint": [
+    {
+      "label": "layer: upper soil",
+      "on": "soil"
+    }
+  ]
+}

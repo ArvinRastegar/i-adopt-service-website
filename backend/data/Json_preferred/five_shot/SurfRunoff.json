@@ -1,0 +1,20 @@
+{
+  "label": "Surface runoff",
+  "definition": "Surface runoff measured in kg m⁻² s⁻¹",
+  "comment": "condition: not soaking into the ground, surface, water body, mass flow, water",
+  "hasProperty": "mass flow",
+  "hasPropertyURI": "https://www.wikidata.org/wiki/Q3295893",
+  "hasMatrix": {
+    "AsymmetricSystem": "n02e21c1fb4154ebf97ba497cefb8dadfb1",
+    "hasSource": "surface",
+    "hasTarget": "water body"
+  },
+  "hasObjectOfInterest": "water",
+  "hasObjectOfInterestURI": "https://www.wikidata.org/wiki/Q283",
+  "hasConstraint": [
+    {
+      "label": "condition: not soaking into the ground",
+      "on": "surface"
+    }
+  ]
+}

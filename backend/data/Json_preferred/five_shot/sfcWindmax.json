@@ -1,0 +1,25 @@
+{
+  "label": "Daily Maximum Near-Surface Wind Speed of Gust",
+  "definition": "Daily Maximum Near-Surface Wind Speed of Gust, measured in m s⁻¹",
+  "comment": "Daily Maximum Near-Surface Wind Speed of Gust, measured in m s⁻¹",
+  "hasProperty": "speed",
+  "hasPropertyURI": "https://www.wikidata.org/wiki/Q3711325",
+  "hasStatisticalModifier": "maximum",
+  "hasStatisticalModifierURI": "https://www.wikidata.org/wiki/Q10578722",
+  "hasObjectOfInterest": "wind",
+  "hasObjectOfInterestURI": "https://www.wikidata.org/wiki/Q8094",
+  "hasConstraint": [
+    {
+      "label": "location: near surface",
+      "on": "wind"
+    },
+    {
+      "label": "type: gust",
+      "on": "wind"
+    },
+    {
+      "label": "aggregation: daily",
+      "on": "maximum"
+    }
+  ]
+}

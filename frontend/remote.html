@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>I-Adopt Remote Visualization</title>
+    <style>
+      html, body, svg, #svg {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        margin: 0;
+        padding: 0;
+      }
+      .init text {
+        text-anchor: middle;
+        font-style: italic;
+        font-size: 10rem;
+      }
+      #svg {
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="svg">
+      <svg version="1.1"
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 1024 768"
+          preserveAspectRatio="xMidYMin">
+        <g class="init">
+          <text x="50%" y="50%">Rendering</text>
+        </g>
+      </svg>
+      <svg>
+        <g id="footer">
+          <text>
+            Visualization powered by
+            <a target="_blank" href="https://github.com/SirkoS/iadopt-vis">SirkoS/iadopt-vis</a>. |
+            <a class="issue" target="_blank" href="https://github.com/SirkoS/iadopt-vis/issues/new?template=bug_remote.yaml&src=">Report a Bug.</a>
+          </text>
+        </g>
+      </svg>
+      <div id="helper">
+        <svg><text></text></svg>
+      </div>
+    </div>
+    <script type="module" src="./src/remote.js"></script>
+  </body>
+</html>
