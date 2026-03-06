@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+openai
+httpx
+requests
+jsonschema
+sentence-transformers
+torch
+numpy
+pydantic
+dotenv

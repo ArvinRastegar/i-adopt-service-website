@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/schemas/iadopt-variable.json",
+  "title": "I-ADOPT Variable (Decomposed Form)",
+  "description": "A single scientific variable structured according to the I-ADOPT framework. This compact JSON model is used for LLM benchmarking and represents: label, natural-language definition, cleaned comment, property, objects/entities, matrices, context objects, and constraints.",
+  "type": "object",
+
+  "required": ["label", "definition", "comment", "hasProperty", "hasObjectOfInterest"],
+
+  "properties": {
+    "label": {
+      "type": "string",
+      "description": "Human-readable name of the variable (rdfs:label)."
+    },
+    "definition": {
+      "type": "string",
+      "description": "Full natural-language description."
+    },
+    "comment": {
+      "type": "string",
+      "description": "Use a short summary of the definition. Do not add new concepts."
+    },
+    "hasProperty": {
+      "type": "string",
+      "description": "The main measurable property in the definition."
+    },
+    "hasStatisticalModifier": {
+      "type": "string",
+      "description": "Optional statistical qualifier (e.g., 'maximum', 'minimum', 'median')."
+    },
+    "hasObjectOfInterest": {
+      "$ref": "#/$defs/entityOrSystem",
+      "description": "The thing that has the property."
+    },
+    "hasMatrix": {
+      "$ref": "#/$defs/entityOrSystem",
+      "description": "Medium in which the object occurs. Not a process or location."
+    },
+    "hasContextObject": {
+      "$ref": "#/$defs/entityOrSystem",
+      "description": "Optional contextual Entity or System that provides environmental or situational context (e.g., 'air', 'atmosphere')."
+    },
+    "hasConstraint": {
+      "type": "array",
+      "description": "List of Constraints describing states, conditions, purity, normalization, or other limiting qualifiers and or quantifiers that apply to the Entity.",
+      "items": {
+        "type": "object",
+        "required": ["label", "on"],
+        "properties": {
+          "label": {
+            "type": "string",
+            "description": "Short cleaned phrase describing the restriction (e.g., 'dry', 'purity 99.98%', '5.00 g sample', 'per mol')."
+          },
+          "on": {
+            "type": "string",
+            "description": "What the constraint applies to (The name of a Property or Entity in this variable, e.g. 'distance', 'mass flux', 'habitat patch', 'organism')."
+          }
+        },
+        "additionalProperties": false
+      },
+      "minItems": 1
+    }
+  },
+
+  "additionalProperties": false,
+
+  "$defs": {
+    "entityOrSystem": {
+      "description": "An Entity or System involved in the variable. It may be a simple entity (e.g., 'hexanol', 'air', 'soil') or a structured system (asymmetric or symmetric).",
+      "oneOf": [
+        { "type": "string",
+        "description": "A simple entity label (e.g., 'air', 'soil', 'nitrogen')."
+      },
+        {
+          "$comment": "Asymmetric system, from A to B",
+          "type": "object",
+          "required": [
+            "AsymmetricSystem",
+            "hasSource",
+            "hasTarget",
+            "hasNumerator",
+            "hasDenominator"
+          ],
+          "properties": {
+            "AsymmetricSystem": { "type": "string" },
+            "hasSource":        { "type": "string" },
+            "hasTarget":        { "type": "string" },
+            "hasNumerator":     { "type": "string" },
+            "hasDenominator":   { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "$comment": "Symmetric system, A and B together form a system",
+          "type": "object",
+          "required": ["SymmetricSystem", "hasPart"],
+          "properties": {
+            "SymmetricSystem": { "type": "string" },
+            "hasPart": {
+              "type": "array",
+              "items": { "type": "string" },
+              "minItems": 1
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}
