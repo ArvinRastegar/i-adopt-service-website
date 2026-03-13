@@ -10,11 +10,13 @@
   "properties": {
     "label": {
       "type": "string",
-      "description": "Human-readable name of the variable (rdfs:label)."
+      "description": "Human-readable name of the variable (rdfs:label).",
+      "minLength": 1
     },
     "definition": {
       "type": "string",
-      "description": "Full natural-language description."
+      "description": "Full natural-language description.",
+      "minLength": 1
     },
     "comment": {
       "type": "string",
@@ -22,15 +24,17 @@
     },
     "hasProperty": {
       "type": "string",
-      "description": "The main measurable property in the definition."
+      "description": "The main measurable property in the definition.", 
+      "minLength": 1
+    },
+    "hasObjectOfInterest": {
+      "$ref": "#/$defs/entityOrSystem",
+      "description": "The thing that has the property.",
+      "minLength": 1
     },
     "hasStatisticalModifier": {
       "type": "string",
       "description": "Optional statistical qualifier (e.g., 'maximum', 'minimum', 'median')."
-    },
-    "hasObjectOfInterest": {
-      "$ref": "#/$defs/entityOrSystem",
-      "description": "The thing that has the property."
     },
     "hasMatrix": {
       "$ref": "#/$defs/entityOrSystem",
