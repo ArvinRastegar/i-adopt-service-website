@@ -17,11 +17,48 @@ from jsonschema import Draft202012Validator
 from openai import APIStatusError, OpenAI, OpenAIError
 from pydantic import BaseModel, Field
 from sentence_transformers import CrossEncoder
+from contextlib import asynccontextmanager
+
 
 # ======================================================================================
 # App setup
 # ======================================================================================
-app = FastAPI(title="I-ADOPT Variable Decomposition API", version="0.1.0")
+def warmup_assets() -> None:
+    global _schema_cache, _validator_cache, _prompt_version_cache, _examples_5_cache
+
+    # OpenRouter client init
+    get_openai_client()
+
+    # Heavy model load (do this at startup)
+    if ENABLE_WIKIDATA_LINKING:
+        get_reranker()
+
+    # Cache schema validator
+    _schema_cache = _patch_schema_for_pipeline(load_schema(SCHEMA_PATH))
+    _validator_cache = Draft202012Validator(_schema_cache)
+
+    # Cache prompt version + examples
+    versions = list_prompt_versions(PROMPT_DIR)
+    if not versions:
+        raise RuntimeError(f"No prompt files found in: {PROMPT_DIR}")
+    _prompt_version_cache = versions[0]
+    _examples_5_cache = load_examples(FIVE_SHOT_DIR, 5)
+
+    # Prime HTTP session
+    get_http_session()
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    warmup_assets()
+    yield
+
+
+app = FastAPI(
+    title="I-ADOPT Variable Decomposition API",
+    version="0.1.0",
+    lifespan=lifespan,
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -46,7 +83,9 @@ SCHEMA_PATH = DATA_DIR / "Json_schema.json"
 PROMPT_DIR = DATA_DIR / "prompts"
 FIVE_SHOT_DIR = DATA_DIR / "Json_preferred" / "five_shot"
 
-MODEL_NAME = os.getenv("MODEL_NAME", "qwen/qwen3.5-397b-a17b")
+# MODEL_NAME = os.getenv("MODEL_NAME", "qwen/qwen3.5-397b-a17b")
+MODEL_NAME = os.getenv("MODEL_NAME", "qwen/qwen3.5-flash-02-23")
+# MODEL_NAME = os.getenv("MODEL_NAME", "qwen/qwen3-32b")
 TEMPERATURE = float(os.getenv("TEMPERATURE", "0.5"))
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
@@ -113,6 +152,24 @@ def get_reranker() -> CrossEncoder:
     if _reranker is None:
         _reranker = CrossEncoder(CROSS_ENCODER_ID, device=RERANK_DEVICE)
     return _reranker
+
+
+_openai_client: Optional[OpenAI] = None
+_reranker: Optional[CrossEncoder] = None
+_http_session: Optional[requests.Session] = None
+
+_schema_cache: Optional[Dict[str, Any]] = None
+_validator_cache: Optional[Draft202012Validator] = None
+_prompt_version_cache: Optional[str] = None
+_examples_5_cache: Optional[List[Dict[str, Any]]] = None
+
+
+def get_http_session() -> requests.Session:
+    global _http_session
+    if _http_session is None:
+        _http_session = requests.Session()
+        _http_session.headers.update({"User-Agent": "IADOPT-Linker/1.0 (+fastapi)"})
+    return _http_session
 
 
 # ======================================================================================
@@ -331,12 +388,14 @@ def get_schema_validation_errors(
     schema: Optional[Dict[str, Any]] = None,
     label_for_logs: Optional[str] = None,
 ) -> List[str]:
-    if schema is None:
-        schema = load_schema(schema_path)
+    if schema is not None:
+        validator = Draft202012Validator(_patch_schema_for_pipeline(schema))
+    elif _validator_cache is not None:
+        validator = _validator_cache
+    else:
+        schema = _patch_schema_for_pipeline(load_schema(schema_path))
+        validator = Draft202012Validator(schema)
 
-    schema = _patch_schema_for_pipeline(schema)
-
-    validator = Draft202012Validator(schema)
     errors = sorted(validator.iter_errors(instance), key=lambda e: list(e.path))
 
     if not errors:
@@ -418,10 +477,11 @@ def get_wikidata_entity_cross_encoder(
         return None
 
     encoded = urllib.parse.quote_plus(term)
-    headers = {"User-Agent": "IADOPT-Linker/1.0 (+fastapi)"}
+    # headers = {"User-Agent": "IADOPT-Linker/1.0 (+fastapi)"}
     url = "https://www.wikidata.org/w/api.php" f"?action=wbsearchentities&search={encoded}&language=en&format=json"
 
-    response = requests.get(url, headers=headers, timeout=20)
+    response = get_http_session().get(url, timeout=20)
+
     if response.status_code != 200:
         return None
 
@@ -708,12 +768,14 @@ def run_pipeline(definition: str) -> Dict[str, Any]:
     if not definition:
         raise ValueError("Definition must not be empty.")
 
-    prompt_versions = list_prompt_versions(PROMPT_DIR)
-    if not prompt_versions:
-        raise RuntimeError(f"No prompt files found in: {PROMPT_DIR}")
+    prompt_version = _prompt_version_cache
+    if not prompt_version:
+        prompt_versions = list_prompt_versions(PROMPT_DIR)
+        if not prompt_versions:
+            raise RuntimeError(f"No prompt files found in: {PROMPT_DIR}")
+        prompt_version = prompt_versions[0]
 
-    prompt_version = prompt_versions[0]
-    examples_5 = load_examples(FIVE_SHOT_DIR, 5)
+    examples_5 = _examples_5_cache if _examples_5_cache is not None else load_examples(FIVE_SHOT_DIR, 5)
     prompt = build_prompt(definition, prompt_version=prompt_version, examples=examples_5)
 
     raw_llm_output, pred = call_llm_loose(

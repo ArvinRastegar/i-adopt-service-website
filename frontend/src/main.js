@@ -11,7 +11,7 @@ import { getSVGBlob, getPNGBlob, getTurtleBlob } from './lib/export.js';
 
 import { showError } from './ui/showError.js';
 
-import * as bootstrap from 'bootstrap';
+// import * as bootstrap from 'bootstrap';
 
 const BACKEND_URL = 'http://localhost:8000';
 
@@ -71,7 +71,19 @@ async function visualizeTTL() {
   }
 }
 
+let isDecomposing = false;
+
+function setDecomposeButtonState(isLoading) {
+  const button = document.querySelector('#decompose');
+  if (!button) return;
+
+  button.disabled = isLoading;
+  button.textContent = isLoading ? 'Decomposing...' : 'Decompose';
+  button.classList.toggle('is-loading', isLoading);
+}
+
 async function decomposeDefinition() {
+  if (isDecomposing) return;
   const definition = document.querySelector('#definitionInput')?.value?.trim();
   const rawOutputEl = document.querySelector('#rawOutput');
   const ttlEl = document.querySelector('#input');
@@ -85,9 +97,11 @@ async function decomposeDefinition() {
   if (rawOutputEl) rawOutputEl.value = '';
   if (ttlEl) ttlEl.value = '';
   renderValidationErrors([]);
-  setDecomposeStatus('Decomposing...');
+  setDecomposeStatus('This is going to take a moment...');
 
   try {
+    isDecomposing = true;
+    setDecomposeButtonState(true);
     const response = await fetch(`${BACKEND_URL}/decompose`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -108,12 +122,21 @@ async function decomposeDefinition() {
       ttlEl.value = data.ttl || '';
     }
 
+    if ((data.ttl || '').trim()) {
+      await visualizeTTL(); // auto-run visualize once API returned TTL
+    }
+
     renderValidationErrors(data.validation_errors || []);
     setDecomposeStatus('Decomposition finished.');
+
   } catch (e) {
     console.error(e);
     renderValidationErrors([e.message || 'Unknown backend error.']);
     setDecomposeStatus('Decomposition failed.', true);
+  }
+  finally {
+    isDecomposing = false;
+    setDecomposeButtonState(false);
   }
 }
 
