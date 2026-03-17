@@ -1,4 +1,5 @@
 import 'bootstrap/dist/css/bootstrap.css';
+import 'bootstrap/dist/js/bootstrap.bundle.min.js';
 import '../css/interface.css';
 import '../css/svg.css';
 import '../css/error.css';
@@ -7,11 +8,9 @@ import '../css/print.css';
 import addEditor from './lib/addEditor.js';
 import triggerRedraw from './lib/triggerRedraw.js';
 import extract from './lib/extract.js';
-import { getSVGBlob, getPNGBlob, getTurtleBlob } from './lib/export.js';
+import { getCurrentTurtle, getSVGBlob, getPNGBlob, getTurtleBlob } from './lib/export.js';
 
 import { showError } from './ui/showError.js';
-
-// import * as bootstrap from 'bootstrap';
 
 const BACKEND_URL = 'http://localhost:8000';
 
@@ -140,6 +139,50 @@ async function decomposeDefinition() {
   }
 }
 
+async function publishNanopub() {
+  // Open the tab before the network roundtrip so browsers keep the user-triggered popup allowance.
+  const publishTab = window.open('', '_blank', 'noopener,noreferrer');
+  const ttl = getCurrentTurtle().trim();
+
+  if (!ttl) {
+    if (publishTab) publishTab.close();
+    throw new Error('No Turtle available to publish.');
+  }
+
+  setDecomposeStatus('Publishing nanopublication...');
+
+  try {
+    const response = await fetch(`${BACKEND_URL}/nanopub/publish`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ttl }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.detail || 'Nanopub publish failed.');
+    }
+
+    if (!data.nanopub_url) {
+      throw new Error('Backend did not return the nanopub URL.');
+    }
+
+    // Reuse the reserved tab so the final published nanopub opens directly for the user.
+    if (publishTab) {
+      publishTab.location = data.nanopub_url;
+    } else {
+      window.open(data.nanopub_url, '_blank', 'noopener,noreferrer');
+    }
+
+    setDecomposeStatus('Nanopublication published.');
+  } catch (e) {
+    if (publishTab) publishTab.close();
+    setDecomposeStatus('Nanopublication publish failed.', true);
+    throw e;
+  }
+}
+
 document.querySelector('#decompose')
   ?.addEventListener('click', async () => {
     await decomposeDefinition();
@@ -166,13 +209,16 @@ if (initialTTL) {
 
 document.querySelector('#export')
   ?.addEventListener('click', async (e) => {
-    if (e.target.tagName.toUpperCase() !== 'A') {
+    const link = e.target.closest('a[data-format]');
+    if (!link) {
       return;
     }
 
+    e.preventDefault();
+
     try {
       let blob, ext;
-      switch (e.target.dataset.format) {
+      switch (link.dataset.format) {
         case 'svg':
           blob = getSVGBlob();
           ext = 'svg';
@@ -187,6 +233,10 @@ document.querySelector('#export')
           blob = await getTurtleBlob();
           ext = 'ttl';
           break;
+
+        case 'nanopub':
+          await publishNanopub();
+          return;
 
         default:
           throw Error('Unknown export format!');

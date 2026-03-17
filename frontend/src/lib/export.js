@@ -90,14 +90,34 @@ export async function getPNGBlob() {
 }
 
 
+/**
+ * return the Turtle currently shown to the user
+ *
+ * @returns {string}
+ */
+export function getCurrentTurtle() {
+
+  // The backend-generated TTL shown in the textarea is the publish/download source of truth.
+  const inputEl = document.querySelector( '#input' );
+  const textareaTTL = inputEl?.value?.trim();
+
+  if( textareaTTL ) {
+    return textareaTTL;
+  }
+
+  // Fall back to the local model only when no backend TTL is currently visible.
+  return toTurtle( state.variable );
+
+}
+
 
 /**
  * export current variable to Turtle
  */
 export function getTurtleBlob() {
 
-  // get turtle representation of our variable
-  const ttl = toTurtle( state.variable );
+  // Export the exact TTL the user is currently reviewing so download and publish stay aligned.
+  const ttl = getCurrentTurtle();
 
   // done
   return new Blob([ttl], {type: 'text/turtle;charset=utf-8' });

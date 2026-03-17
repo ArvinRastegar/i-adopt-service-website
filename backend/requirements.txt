@@ -8,4 +8,6 @@ sentence-transformers
 torch
 numpy
 pydantic
-dotenv
+python-dotenv
+rdflib
+nanopub

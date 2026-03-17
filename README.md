@@ -91,6 +91,7 @@ It allows the user to:
    * validation errors
    * generated TTL
 4. visualize the TTL using the **I-ADOPT visualizer**
+5. export the current TTL or publish it as a nanopublication
 
 The visualization is rendered as an **SVG diagram**.
 
@@ -130,11 +131,27 @@ Inside the file add:
 
 ```
 OPENROUTER_API_KEY=sk-or-xxxxxxxxxxxxxxxxxxxx
+NANOPUB_PRIVATE_KEY=base64-body-of-private-key
+NANOPUB_ORCID_ID=0009-0006-1978-4302
+NANOPUB_PROFILE_NAME=Barbara Magagna
+NANOPUB_AGENT_INTRO_URI=https://w3id.org/np/RAwy2xTZzt5Y3ix-7f1HDTewgZqa6eRm5YnmrSKCy0PTA
 ```
 
 Replace the key with your **OpenRouter API key**.
 
 This key is used by the backend to call the LLM.
+The nanopub values are used by the backend to sign and publish nanopublications from the frontend's Turtle payload.
+`NANOPUB_PRIVATE_KEY` and `NANOPUB_PUBLIC_KEY` can be provided either as one-line base64 key bodies or as PEM strings with `\n` escapes.
+
+Optional nanopub settings:
+
+```
+NANOPUB_PUBLIC_KEY=...
+NANOPUB_AGENT_URI=...
+NANOPUB_PROFILE_INTRODUCTION_URI=...
+NANOPUB_LICENSE_URI=https://creativecommons.org/publicdomain/zero/1.0/
+NANOPUB_USE_TEST_SERVER=false
+```
 
 ---
 
@@ -241,3 +258,11 @@ This project connects an **LLM-based decomposition service** with the **I-ADOPT 
 The backend performs the semantic decomposition and generates RDF.
 
 The frontend provides a simple interface to explore the results and visualize the variable structure.
+
+To load frontend and backend separately:
+in root directory: 
+python3 -m uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000
+in frontend directory:
+pnpm dev
+Example of variable definition: 
+Dynamic shear viscosity of polystyrene PS042 under the testing conditions of DIN 51810-1.
