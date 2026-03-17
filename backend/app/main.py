@@ -102,8 +102,12 @@ NANOPUB_AGENT_INTRO_URI = os.getenv("NANOPUB_AGENT_INTRO_URI")
 NANOPUB_PUBLISH_SERVER = os.getenv("NANOPUB_PUBLISH_SERVER", "https://registry.petapico.org/np/")
 NANOPUB_LICENSE_URI = os.getenv("NANOPUB_LICENSE_URI", "https://creativecommons.org/licenses/by/4.0/")
 NANOPUB_WAS_CREATED_AT = os.getenv("NANOPUB_WAS_CREATED_AT", "https://nanodash.knowledgepixels.com/")
-NANOPUB_TEMPLATE_URI = os.getenv("NANOPUB_TEMPLATE_URI", "https://w3id.org/np/RAkcfj9W_lJjlq26paIFmTY4mZoaY27BnZCjcsL34EPIA")
-NANOPUB_PROVENANCE_TEMPLATE_URI = os.getenv("NANOPUB_PROVENANCE_TEMPLATE_URI", "https://w3id.org/np/RANwQa4ICWS5SOjw7gp99nBpXBasapwtZF1fIM3H2gYTM")
+NANOPUB_TEMPLATE_URI = os.getenv(
+    "NANOPUB_TEMPLATE_URI", "https://w3id.org/np/RAkcfj9W_lJjlq26paIFmTY4mZoaY27BnZCjcsL34EPIA"
+)
+NANOPUB_PROVENANCE_TEMPLATE_URI = os.getenv(
+    "NANOPUB_PROVENANCE_TEMPLATE_URI", "https://w3id.org/np/RANwQa4ICWS5SOjw7gp99nBpXBasapwtZF1fIM3H2gYTM"
+)
 NANOPUB_PUBINFO_TEMPLATE_URIS = [
     uri.strip()
     for uri in os.getenv(
@@ -116,12 +120,12 @@ NANOPUB_PUBINFO_TEMPLATE_URIS = [
 ]
 IADOPT_VARIABLE_CONFORMS_TO = os.getenv(
     "IADOPT_VARIABLE_CONFORMS_TO",
-    "https://w3id.org/np/RAKqvAB5e_xBNbzu22rqgEOCrNZyI7syDVtT40LDz2hFY/I-ADOPT-Variable",
+    "https://nanodash.knowledgepixels.com/explore?id=RA5MTl9GFH-QuuBHYEA2hOtxOMOV4-jrhtdx5lOy9CAQE",
 )
-IADOPT_CREATED_WITH_LABEL = os.getenv(
-    "IADOPT_CREATED_WITH_LABEL",
-    "LLM-assisted I-ADOPT variable generation",
-)
+# IADOPT_CREATED_WITH_LABEL = os.getenv(
+#     "IADOPT_CREATED_WITH_LABEL",
+#     "LLM-assisted I-ADOPT variable generation",
+# )
 
 CROSS_ENCODER_ID = os.getenv("CROSS_ENCODER_ID", "tomaarsen/Qwen3-Reranker-0.6B-seq-cls")
 RERANK_DEVICE = os.getenv("RERANK_DEVICE", "cpu")
@@ -796,7 +800,12 @@ def _build_alt_label(formula_context: Dict[str, str], constraints_by_role: Dict[
     if uses_ooi_asymmetric and formula_context.get("numerator") and formula_context.get("denominator"):
         formula_name = "asymmetric-numerator-denominator"
         phrase_plan = [
-            (_phrase_for_role("statistical_modifier", formula_context.get("statistical_modifier", ""), constraints_by_role), None),
+            (
+                _phrase_for_role(
+                    "statistical_modifier", formula_context.get("statistical_modifier", ""), constraints_by_role
+                ),
+                None,
+            ),
             (_phrase_for_role("property", formula_context.get("property", ""), constraints_by_role), None),
             (_phrase_for_role("numerator", formula_context.get("numerator", ""), constraints_by_role), "of"),
             (_phrase_for_role("denominator", formula_context.get("denominator", ""), constraints_by_role), "in"),
@@ -806,7 +815,12 @@ def _build_alt_label(formula_context: Dict[str, str], constraints_by_role: Dict[
     elif uses_ooi_asymmetric and formula_context.get("source") and formula_context.get("target"):
         formula_name = "asymmetric-source-target-object"
         phrase_plan = [
-            (_phrase_for_role("statistical_modifier", formula_context.get("statistical_modifier", ""), constraints_by_role), None),
+            (
+                _phrase_for_role(
+                    "statistical_modifier", formula_context.get("statistical_modifier", ""), constraints_by_role
+                ),
+                None,
+            ),
             (_phrase_for_role("property", formula_context.get("property", ""), constraints_by_role), None),
             (_phrase_for_role("source", formula_context.get("source", ""), constraints_by_role), "from"),
             (_phrase_for_role("target", formula_context.get("target", ""), constraints_by_role), "to"),
@@ -816,7 +830,12 @@ def _build_alt_label(formula_context: Dict[str, str], constraints_by_role: Dict[
     elif uses_matrix_asymmetric and formula_context.get("source") and formula_context.get("target"):
         formula_name = "asymmetric-source-target-matrix"
         phrase_plan = [
-            (_phrase_for_role("statistical_modifier", formula_context.get("statistical_modifier", ""), constraints_by_role), None),
+            (
+                _phrase_for_role(
+                    "statistical_modifier", formula_context.get("statistical_modifier", ""), constraints_by_role
+                ),
+                None,
+            ),
             (_phrase_for_role("property", formula_context.get("property", ""), constraints_by_role), None),
             (_phrase_for_role("object", formula_context.get("object", ""), constraints_by_role), "of"),
             (_phrase_for_role("source", formula_context.get("source", ""), constraints_by_role), "from"),
@@ -826,7 +845,12 @@ def _build_alt_label(formula_context: Dict[str, str], constraints_by_role: Dict[
     else:
         formula_name = "simple-entity"
         phrase_plan = [
-            (_phrase_for_role("statistical_modifier", formula_context.get("statistical_modifier", ""), constraints_by_role), None),
+            (
+                _phrase_for_role(
+                    "statistical_modifier", formula_context.get("statistical_modifier", ""), constraints_by_role
+                ),
+                None,
+            ),
             (_phrase_for_role("property", formula_context.get("property", ""), constraints_by_role), None),
             (_phrase_for_role("object", formula_context.get("object", ""), constraints_by_role), "of"),
             (_phrase_for_role("matrix", formula_context.get("matrix", ""), constraints_by_role), "in"),
@@ -872,7 +896,9 @@ def json_to_ttl_repo_style(pred: Dict[str, Any]) -> str:
             if alias:
                 constraint_targets[_lookup_key(alias)] = (ref, role)
 
-    def add_block(ref: str, rdf_types: List[str], label: Optional[str], extra_lines: Optional[List[str]] = None) -> None:
+    def add_block(
+        ref: str, rdf_types: List[str], label: Optional[str], extra_lines: Optional[List[str]] = None
+    ) -> None:
         # Every linked resource gets its own readable TTL block so the frontend receives a self-contained graph.
         lines = [f"{ref}", "    a " + " ,\n      ".join(rdf_types) + " ;"]
         if label:
@@ -951,7 +977,9 @@ def json_to_ttl_repo_style(pred: Dict[str, Any]) -> str:
         if isinstance(value, dict):
             ref, label = build_system_component(field, value, role_name)
             formula_context[role_name] = label
-            register_target(ref, role_name, field, role_name, label, value.get("AsymmetricSystem"), value.get("SymmetricSystem"))
+            register_target(
+                ref, role_name, field, role_name, label, value.get("AsymmetricSystem"), value.get("SymmetricSystem")
+            )
             return ref, label
 
         return None, ""
@@ -995,16 +1023,16 @@ def json_to_ttl_repo_style(pred: Dict[str, Any]) -> str:
             "    a fdof:FAIRDigitalObject ,",
             "      iop:Variable ;",
             f"    dct:conformsTo <{IADOPT_VARIABLE_CONFORMS_TO}> ;",
-            f"    rdfs:label {_ttl_quote(main_label)} ;",
+            # f"    rdfs:label {_ttl_quote(main_label)} ;",
             f"    skos:prefLabel {_ttl_quote(pref_label)} ;",
             f"    skos:altLabel {_ttl_quote(alt_label)} ;",
             f"    skos:definition {_ttl_quote(definition)} ;",
             f"    rdfs:comment {_ttl_quote(_make_comment(formula_name))} ;",
             f"    dct:identifier {_ttl_quote(variable_identifier)} ;",
-            f'    dct:created "{created_literal}"^^xsd:dateTime ;',
-            f"    dct:creator orcid:{orcid_suffix} ;",
-            f"    pav:createdWith {_ttl_quote(IADOPT_CREATED_WITH_LABEL)} ;",
-            f"    prov:wasAttributedTo orcid:{orcid_suffix} ;",
+            # f'    dct:created "{created_literal}"^^xsd:dateTime ;',
+            # f"    dct:creator orcid:{orcid_suffix} ;",
+            # f"    pav:createdWith {_ttl_quote(IADOPT_CREATED_WITH_LABEL)} ;",
+            # f"    prov:wasAttributedTo orcid:{orcid_suffix} ;",
         ]
     )
 
@@ -1031,6 +1059,7 @@ def json_to_ttl_repo_style(pred: Dict[str, Any]) -> str:
     )
 
     return "\n".join([TTL_PREFIXES, "\n".join(variable_lines), "", *blocks, creator_block, ""])
+
 
 # ======================================================================================
 # Main pipeline
@@ -1141,18 +1170,20 @@ def _add_nanopub_metadata(
     nanopub.pubinfo.add((nanopub_uri, NPX.introduces, variable_uri))
     nanopub.pubinfo.add((nanopub_uri, NPX["wasCreatedAt"], URIRef(NANOPUB_WAS_CREATED_AT)))
 
-    if agent_uri:
-        nanopub.pubinfo.add((nanopub_uri, PAV.createdWith, URIRef(agent_uri)))
+    # if agent_uri:
+    #     nanopub.pubinfo.add((nanopub_uri, PAV.createdWith, URIRef(agent_uri)))
 
     if NANOPUB_TEMPLATE_URI:
         nanopub.pubinfo.add((nanopub_uri, NTEMPLATE["wasCreatedFromTemplate"], URIRef(NANOPUB_TEMPLATE_URI)))
 
     if NANOPUB_PROVENANCE_TEMPLATE_URI:
-        nanopub.pubinfo.add((
-            nanopub_uri,
-            NTEMPLATE["wasCreatedFromProvenanceTemplate"],
-            URIRef(NANOPUB_PROVENANCE_TEMPLATE_URI),
-        ))
+        nanopub.pubinfo.add(
+            (
+                nanopub_uri,
+                NTEMPLATE["wasCreatedFromProvenanceTemplate"],
+                URIRef(NANOPUB_PROVENANCE_TEMPLATE_URI),
+            )
+        )
 
     for template_uri in NANOPUB_PUBINFO_TEMPLATE_URIS:
         nanopub.pubinfo.add((nanopub_uri, NTEMPLATE["wasCreatedFromPubinfoTemplate"], URIRef(template_uri)))
