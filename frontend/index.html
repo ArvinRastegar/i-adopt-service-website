@@ -141,6 +141,39 @@ ex:Matrix_SysB
 
       <pre id="dev"></pre>
       <div class="container-lg" id="svg"></div>
+      <div id="retractPanel" class="card mt-4">
+        <div class="card-body">
+          <h2 class="section-title">Retract Published Nanopublication</h2>
+          <p class="text-secondary mb-3">
+            Choose one of the variable identifiers that this browser has published, then publish a retraction nanopublication for it.
+          </p>
+
+          <div class="row g-3 align-items-end">
+            <div class="col-lg-8">
+              <label for="retractSelect" class="form-label">Published variable identifier</label>
+              <select id="retractSelect" class="form-select" aria-label="Published variable identifier">
+                <option value="">No published nanopublications saved yet.</option>
+              </select>
+            </div>
+
+            <div class="col-lg-4">
+              <button id="retractButton" class="btn btn-outline-danger w-100" type="button" disabled>Retract</button>
+            </div>
+          </div>
+
+          <div class="mt-3">
+            <label for="retractInput" class="form-label">Or paste a nanopublication reference to retract</label>
+            <input
+              id="retractInput"
+              type="text"
+              class="form-control"
+              placeholder="Paste a https://w3id.org/np/RA... URI, raw RA identifier, or Nanodash explore link"
+            />
+          </div>
+
+          <div id="retractStatus" class="mt-3 text-secondary" aria-live="polite"></div>
+        </div>
+      </div>
 
       <div id="helper">
         <svg><text></text></svg>

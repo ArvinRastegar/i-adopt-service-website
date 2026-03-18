@@ -122,6 +122,23 @@ IADOPT_VARIABLE_CONFORMS_TO = os.getenv(
     "IADOPT_VARIABLE_CONFORMS_TO",
     "https://nanodash.knowledgepixels.com/explore?id=RA5MTl9GFH-QuuBHYEA2hOtxOMOV4-jrhtdx5lOy9CAQE",
 )
+NANOPUB_RETRACT_TEMPLATE_URI = os.getenv(
+    "NANOPUB_RETRACT_TEMPLATE_URI",
+    "https://w3id.org/np/RAQP3NJvnLA2Z-2DrYAN0nTC-RFp67td1t4-pQqQ_ZKmo",
+)
+NANOPUB_RETRACT_PROVENANCE_TEMPLATE_URI = os.getenv(
+    "NANOPUB_RETRACT_PROVENANCE_TEMPLATE_URI",
+    "https://w3id.org/np/RA7lSq6MuK_TIC6JMSHvLtee3lpLoZDOqLJCLXevnrPoU",
+)
+NANOPUB_RETRACT_PUBINFO_TEMPLATE_URIS = [
+    uri.strip()
+    for uri in os.getenv(
+        "NANOPUB_RETRACT_PUBINFO_TEMPLATE_URIS",
+        "https://w3id.org/np/RA0J4vUn_dekg-U1kK3AOEt02p9mT2WO03uGxLDec1jLw,"
+        "https://w3id.org/np/RAukAcWHRDlkqxk7H2XNSegc1WnHI569INvNr-xdptDGI",
+    ).split(",")
+    if uri.strip()
+]
 # IADOPT_CREATED_WITH_LABEL = os.getenv(
 #     "IADOPT_CREATED_WITH_LABEL",
 #     "LLM-assisted I-ADOPT variable generation",
@@ -170,6 +187,18 @@ class PublishNanopubRequest(BaseModel):
 class PublishNanopubResponse(BaseModel):
     nanopub_url: str
     published_to: str
+    variable_identifier: str
+    variable_uri: str
+
+
+class RetractNanopubRequest(BaseModel):
+    nanopub_uri: str = Field(..., min_length=1, description="The published nanopub URI or Nanodash explore URL to retract")
+
+
+class RetractNanopubResponse(BaseModel):
+    retraction_url: str
+    published_to: str
+    retracted_nanopub_url: str
 
 
 # ======================================================================================
@@ -1146,6 +1175,134 @@ def _extract_assertion_label(assertion_graph: Graph, variable_uri: URIRef) -> Op
     return label_text or None
 
 
+def _extract_variable_identifier(assertion_graph: Graph, variable_uri: URIRef) -> str:
+    """Return the variable identifier string that the frontend stores in the retract dropdown."""
+    identifier = assertion_graph.value(variable_uri, DCTERMS.identifier)
+    if identifier is not None and str(identifier).strip():
+        return str(identifier).strip()
+    return str(variable_uri).rstrip("/").rsplit("/", 1)[-1]
+
+
+def _normalize_target_nanopub_uri(raw_value: str) -> str:
+    """Accept saved nanopub URLs, raw RA identifiers, or Nanodash explore links and normalize them to the canonical URI."""
+    candidate = (raw_value or "").strip()
+    if not candidate:
+        raise RuntimeError("No nanopub URI was provided for retraction.")
+
+    # Support Nanodash explore URLs such as `.../explore?id=RA...` by extracting the underlying nanopub identifier.
+    parsed = urllib.parse.urlparse(candidate)
+    if parsed.scheme and parsed.netloc:
+        query_id = urllib.parse.parse_qs(parsed.query).get("id", [])
+        if query_id and query_id[0]:
+            candidate = query_id[0].strip()
+        else:
+            trusty_match = re.search(r"(RA[A-Za-z0-9_-]+)", candidate)
+            if trusty_match:
+                candidate = trusty_match.group(1)
+
+    if re.fullmatch(r"RA[A-Za-z0-9_-]+", candidate):
+        return f"https://w3id.org/np/{candidate}"
+
+    if candidate.startswith("https://w3id.org/np/"):
+        return candidate
+
+    raise RuntimeError(
+        "Unsupported nanopub reference. Provide a `https://w3id.org/np/RA...` URI, "
+        "a raw `RA...` identifier, or a Nanodash explore URL."
+    )
+
+
+def _public_key_prefix(public_key: Optional[str], prefix_length: int = 32) -> str:
+    """Shorten public keys in error messages so users can compare them without dumping the full key."""
+    clean_key = (public_key or "").strip()
+    if not clean_key:
+        return "missing"
+    return clean_key[:prefix_length]
+
+
+def _assert_retraction_allowed(target_nanopub_uri: str, profile: Profile) -> None:
+    """Enforce the key-match rule ourselves because `nanopub-py`'s local retract check is unreliable."""
+    try:
+        target_nanopub = Nanopub(
+            source_uri=target_nanopub_uri,
+            conf=NanopubConf(use_server=NANOPUB_PUBLISH_SERVER),
+        )
+    except Exception as e:
+        raise RuntimeError(f"Could not load the target nanopub for retraction: {e}") from e
+
+    target_public_key = (target_nanopub.metadata.public_key or "").strip()
+    profile_public_key = (profile.public_key or "").strip()
+
+    if not target_public_key:
+        raise RuntimeError("The target nanopub does not expose a public key, so retraction ownership cannot be verified.")
+
+    if not profile_public_key:
+        raise RuntimeError("The configured nanopub profile does not expose a public key.")
+
+    if target_public_key != profile_public_key:
+        raise RuntimeError(
+            "The target nanopub was not signed with the key currently configured in this backend, so it cannot be "
+            "retracted here. "
+            f"Target key prefix: {_public_key_prefix(target_public_key)} ; "
+            f"current key prefix: {_public_key_prefix(profile_public_key)}."
+        )
+
+
+def _build_retraction_nanopub(target_nanopub_uri: str, profile: Profile) -> Nanopub:
+    """Create the richer retraction nanopub shape that the production registries currently accept."""
+    orcid_uri = URIRef(_normalize_orcid(NANOPUB_ORCID_ID))
+    target_identifier = target_nanopub_uri.rsplit("/", 1)[-1]
+    retraction_label = f"Retraction of {target_identifier[:10]}"
+
+    assertion_graph = Graph()
+    assertion_graph.add((orcid_uri, NPX.retracts, URIRef(target_nanopub_uri)))
+
+    nanopub = Nanopub(
+        assertion=assertion_graph,
+        conf=NanopubConf(
+            profile=profile,
+            use_server=NANOPUB_PUBLISH_SERVER,
+            add_prov_generated_time=False,
+            add_pubinfo_generated_time=False,
+            attribute_assertion_to_profile=False,
+            attribute_publication_to_profile=False,
+        ),
+    )
+
+    # The registries accept retractions when they mirror the current Nanodash-style pubinfo shape.
+    nanopub.provenance.add((nanopub.assertion.identifier, PROV.wasAttributedTo, orcid_uri))
+    nanopub.pubinfo.add((orcid_uri, FOAF.name, Literal(NANOPUB_PROFILE_NAME)))
+    nanopub.pubinfo.add((nanopub.metadata.namespace[""], DCTERMS.created, _nanopub_created_literal()))
+    nanopub.pubinfo.add((nanopub.metadata.namespace[""], DCTERMS.creator, orcid_uri))
+    nanopub.pubinfo.add((nanopub.metadata.namespace[""], DCTERMS.license, URIRef(NANOPUB_LICENSE_URI)))
+    nanopub.pubinfo.add((nanopub.metadata.namespace[""], NPX.hasNanopubType, NPX.retracts))
+    nanopub.pubinfo.add((nanopub.metadata.namespace[""], NPX["wasCreatedAt"], URIRef(NANOPUB_WAS_CREATED_AT)))
+    nanopub.pubinfo.add((nanopub.metadata.namespace[""], RDFS.label, Literal(retraction_label)))
+
+    if NANOPUB_RETRACT_PROVENANCE_TEMPLATE_URI:
+        nanopub.pubinfo.add((
+            nanopub.metadata.namespace[""],
+            NTEMPLATE["wasCreatedFromProvenanceTemplate"],
+            URIRef(NANOPUB_RETRACT_PROVENANCE_TEMPLATE_URI),
+        ))
+
+    for template_uri in NANOPUB_RETRACT_PUBINFO_TEMPLATE_URIS:
+        nanopub.pubinfo.add((
+            nanopub.metadata.namespace[""],
+            NTEMPLATE["wasCreatedFromPubinfoTemplate"],
+            URIRef(template_uri),
+        ))
+
+    if NANOPUB_RETRACT_TEMPLATE_URI:
+        nanopub.pubinfo.add((
+            nanopub.metadata.namespace[""],
+            NTEMPLATE["wasCreatedFromTemplate"],
+            URIRef(NANOPUB_RETRACT_TEMPLATE_URI),
+        ))
+
+    return nanopub
+
+
 def _add_nanopub_metadata(
     nanopub: Nanopub,
     *,
@@ -1231,6 +1388,7 @@ def publish_nanopub(req: PublishNanopubRequest) -> PublishNanopubResponse:
     try:
         profile = get_nanopub_profile()
         variable_uri = _extract_variable_uri(assertion_graph)
+        variable_identifier = _extract_variable_identifier(assertion_graph, variable_uri)
         assertion_label = _extract_assertion_label(assertion_graph, variable_uri)
         created_at = _nanopub_created_literal()
         agent_uri = get_nanopub_agent_uri()
@@ -1262,6 +1420,8 @@ def publish_nanopub(req: PublishNanopubRequest) -> PublishNanopubResponse:
         return PublishNanopubResponse(
             nanopub_url=nanopub_url,
             published_to=published_to,
+            variable_identifier=variable_identifier,
+            variable_uri=str(variable_uri),
         )
     except HTTPException:
         raise
@@ -1269,3 +1429,25 @@ def publish_nanopub(req: PublishNanopubRequest) -> PublishNanopubResponse:
         raise HTTPException(status_code=500, detail=str(e)) from e
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Nanopub publish failed: {e}") from e
+
+
+@app.post("/nanopub/retract", response_model=RetractNanopubResponse)
+def retract_nanopub(req: RetractNanopubRequest) -> RetractNanopubResponse:
+    """Publish a signed nanopub retraction for a previously published nanopublication."""
+    try:
+        target_nanopub_uri = _normalize_target_nanopub_uri(req.nanopub_uri)
+        profile = get_nanopub_profile()
+        _assert_retraction_allowed(target_nanopub_uri, profile)
+        retraction = _build_retraction_nanopub(target_nanopub_uri, profile)
+
+        # Publishing the custom retraction nanopub creates a new nanopub whose assertion retracts the target URI.
+        publish_result = retraction.publish()
+        return RetractNanopubResponse(
+            retraction_url=str(publish_result[0]),
+            published_to=str(publish_result[1]),
+            retracted_nanopub_url=target_nanopub_uri,
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Nanopub retract failed: {e}") from e

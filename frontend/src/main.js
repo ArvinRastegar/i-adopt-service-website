@@ -13,9 +13,19 @@ import { getCurrentTurtle, getSVGBlob, getPNGBlob, getTurtleBlob } from './lib/e
 import { showError } from './ui/showError.js';
 
 const BACKEND_URL = 'http://localhost:8000';
+const PUBLISHED_NANOPUBS_STORAGE_KEY = 'iadopt-published-nanopubs';
 
 function setDecomposeStatus(message, isError = false) {
   const el = document.querySelector('#decomposeStatus');
+  if (!el) return;
+
+  el.textContent = message || '';
+  el.classList.toggle('text-danger', isError);
+  el.classList.toggle('text-secondary', !isError);
+}
+
+function setRetractStatus(message, isError = false) {
+  const el = document.querySelector('#retractStatus');
   if (!el) return;
 
   el.textContent = message || '';
@@ -44,6 +54,100 @@ function renderValidationErrors(errors = []) {
       ${errors.map((line) => escapeHtml(line)).join('<br>')}
     </div>
   `;
+}
+
+function readPublishedNanopubs() {
+  try {
+    const raw = localStorage.getItem(PUBLISHED_NANOPUBS_STORAGE_KEY);
+    if (!raw) return [];
+
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    console.error(e);
+    return [];
+  }
+}
+
+function writePublishedNanopubs(entries) {
+  // Persisting published nanopubs in localStorage keeps the retract dropdown available across reloads.
+  localStorage.setItem(PUBLISHED_NANOPUBS_STORAGE_KEY, JSON.stringify(entries));
+}
+
+function getManualRetractReference() {
+  return document.querySelector('#retractInput')?.value?.trim() || '';
+}
+
+function updateRetractButtonState() {
+  const retractButton = document.querySelector('#retractButton');
+  const select = document.querySelector('#retractSelect');
+  if (!retractButton) return;
+
+  // Retraction is allowed when the user either selects a saved publication or pastes a manual nanopub reference.
+  retractButton.disabled = !getManualRetractReference() && !select?.value;
+}
+
+function renderRetractOptions(selectedNanopubUrl = '') {
+  const select = document.querySelector('#retractSelect');
+  if (!select) return;
+
+  const entries = readPublishedNanopubs();
+  select.innerHTML = '';
+
+  if (!entries.length) {
+    select.innerHTML = '<option value="">No published nanopublications saved yet.</option>';
+    select.disabled = true;
+    updateRetractButtonState();
+    return;
+  }
+
+  const placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = 'Select a published variable identifier';
+  select.appendChild(placeholder);
+
+  for (const entry of entries) {
+    // The option label shows only the variable identifier, while the value keeps the nanopub URL needed to retract it.
+    const option = document.createElement('option');
+    option.value = entry.nanopubUrl;
+    option.textContent = entry.variableIdentifier;
+    option.title = entry.nanopubUrl;
+
+    if (selectedNanopubUrl && entry.nanopubUrl === selectedNanopubUrl) {
+      option.selected = true;
+    }
+
+    select.appendChild(option);
+  }
+
+  select.disabled = false;
+  updateRetractButtonState();
+}
+
+function rememberPublishedNanopub(entry) {
+  const entries = readPublishedNanopubs()
+    .filter((item) => item.nanopubUrl !== entry.nanopubUrl);
+
+  // New publications are inserted first so the most recent identifier is easiest to retract.
+  entries.unshift(entry);
+  writePublishedNanopubs(entries);
+  renderRetractOptions(entry.nanopubUrl);
+}
+
+function forgetPublishedNanopub(nanopubUrl) {
+  const entries = readPublishedNanopubs()
+    .filter((entry) => entry.nanopubUrl !== nanopubUrl);
+
+  writePublishedNanopubs(entries);
+  renderRetractOptions();
+}
+
+function getSelectedPublishedNanopub() {
+  const select = document.querySelector('#retractSelect');
+  if (!select?.value) return null;
+
+  return readPublishedNanopubs()
+    .find((entry) => entry.nanopubUrl === select.value) || null;
 }
 
 async function visualizeTTL() {
@@ -168,6 +272,17 @@ async function publishNanopub() {
       throw new Error('Backend did not return the nanopub URL.');
     }
 
+    rememberPublishedNanopub({
+      variableIdentifier: data.variable_identifier || data.variable_uri || data.nanopub_url,
+      variableUri: data.variable_uri || '',
+      nanopubUrl: data.nanopub_url,
+      publishedTo: data.published_to || '',
+      savedAt: new Date().toISOString(),
+    });
+
+    // Every successful publish immediately becomes available in the retract dropdown below the visualization.
+    setRetractStatus(`Saved ${data.variable_identifier || data.nanopub_url} for retraction.`);
+
     // Reuse the reserved tab so the final published nanopub opens directly for the user.
     if (publishTab) {
       publishTab.location = data.nanopub_url;
@@ -179,6 +294,64 @@ async function publishNanopub() {
   } catch (e) {
     if (publishTab) publishTab.close();
     setDecomposeStatus('Nanopublication publish failed.', true);
+    throw e;
+  }
+}
+
+async function retractNanopub() {
+  // Reserve the browser tab before the request so the final retraction nanopub opens without popup blocking.
+  const retractTab = window.open('', '_blank', 'noopener,noreferrer');
+  const manualReference = getManualRetractReference();
+  const selectedEntry = getSelectedPublishedNanopub();
+  const targetReference = manualReference || selectedEntry?.nanopubUrl;
+  const targetLabel = manualReference || selectedEntry?.variableIdentifier || 'selected nanopublication';
+
+  if (!targetReference) {
+    if (retractTab) retractTab.close();
+    throw new Error('Choose a published variable identifier or paste a nanopublication reference to retract.');
+  }
+
+  setRetractStatus(`Retracting ${targetLabel}...`);
+
+  try {
+    const response = await fetch(`${BACKEND_URL}/nanopub/retract`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nanopub_uri: targetReference }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.detail || 'Nanopub retract failed.');
+    }
+
+    if (!data.retraction_url) {
+      throw new Error('Backend did not return the retraction nanopub URL.');
+    }
+
+    const matchingEntry = readPublishedNanopubs()
+      .find((entry) => entry.nanopubUrl === data.retracted_nanopub_url || entry.nanopubUrl === targetReference);
+
+    if (matchingEntry) {
+      forgetPublishedNanopub(matchingEntry.nanopubUrl);
+    }
+
+    const retractInput = document.querySelector('#retractInput');
+    if (retractInput) retractInput.value = '';
+
+    setRetractStatus(`Retracted ${targetLabel}.`);
+    updateRetractButtonState();
+
+    if (retractTab) {
+      retractTab.location = data.retraction_url;
+    } else {
+      window.open(data.retraction_url, '_blank', 'noopener,noreferrer');
+    }
+  } catch (e) {
+    if (retractTab) retractTab.close();
+    // Surface the backend detail directly so users can see whether the failure is a key mismatch or a registry rejection.
+    setRetractStatus(e.message || 'Nanopublication retract failed.', true);
     throw e;
   }
 }
@@ -206,6 +379,8 @@ const initialTTL = document.querySelector('#input')?.value?.trim();
 if (initialTTL) {
   document.querySelector('#visualize')?.click();
 }
+
+renderRetractOptions();
 
 document.querySelector('#export')
   ?.addEventListener('click', async (e) => {
@@ -254,6 +429,27 @@ document.querySelector('#export')
       downloadLink.click();
       document.body.removeChild(downloadLink);
 
+    } catch (e) {
+      console.error(e);
+    }
+  });
+
+document.querySelector('#retractSelect')
+  ?.addEventListener('change', (e) => {
+    // Changing the saved-selection path updates the shared retract button state.
+    updateRetractButtonState();
+  });
+
+document.querySelector('#retractInput')
+  ?.addEventListener('input', () => {
+    // Typing a manual nanopub reference enables the same retract button without needing a saved dropdown entry.
+    updateRetractButtonState();
+  });
+
+document.querySelector('#retractButton')
+  ?.addEventListener('click', async () => {
+    try {
+      await retractNanopub();
     } catch (e) {
       console.error(e);
     }
