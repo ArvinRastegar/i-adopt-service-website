@@ -92,6 +92,8 @@ FIVE_SHOT_DIR = DATA_DIR / "Json_preferred" / "five_shot"
 # MODEL_NAME = os.getenv("MODEL_NAME", "qwen/qwen3.5-397b-a17b")
 MODEL_NAME = os.getenv("MODEL_NAME", "qwen/qwen3.5-flash-02-23")
 # MODEL_NAME = os.getenv("MODEL_NAME", "qwen/qwen3-32b")
+# MODEL_NAME = os.getenv("MODEL_NAME", "google/gemini-3-flash-preview")
+
 TEMPERATURE = float(os.getenv("TEMPERATURE", "0.5"))
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 NANOPUB_PRIVATE_KEY = os.getenv("NANOPUB_PRIVATE_KEY")
@@ -192,7 +194,9 @@ class PublishNanopubResponse(BaseModel):
 
 
 class RetractNanopubRequest(BaseModel):
-    nanopub_uri: str = Field(..., min_length=1, description="The published nanopub URI or Nanodash explore URL to retract")
+    nanopub_uri: str = Field(
+        ..., min_length=1, description="The published nanopub URI or Nanodash explore URL to retract"
+    )
 
 
 class RetractNanopubResponse(BaseModel):
@@ -428,6 +432,11 @@ def call_model(model: str, prompt: str, temperature: float) -> str:
                 temperature=temperature,
                 messages=[{"role": "user", "content": prompt}],
                 timeout=60,
+                extra_body={
+                    "reasoning": {
+                        "effort": "none",  # or: "minimal", "low", "medium", "high"
+                    }
+                },
             )
             text = resp.choices[0].message.content or ""
             stripped = text.strip()
@@ -1234,7 +1243,9 @@ def _assert_retraction_allowed(target_nanopub_uri: str, profile: Profile) -> Non
     profile_public_key = (profile.public_key or "").strip()
 
     if not target_public_key:
-        raise RuntimeError("The target nanopub does not expose a public key, so retraction ownership cannot be verified.")
+        raise RuntimeError(
+            "The target nanopub does not expose a public key, so retraction ownership cannot be verified."
+        )
 
     if not profile_public_key:
         raise RuntimeError("The configured nanopub profile does not expose a public key.")
@@ -1280,25 +1291,31 @@ def _build_retraction_nanopub(target_nanopub_uri: str, profile: Profile) -> Nano
     nanopub.pubinfo.add((nanopub.metadata.namespace[""], RDFS.label, Literal(retraction_label)))
 
     if NANOPUB_RETRACT_PROVENANCE_TEMPLATE_URI:
-        nanopub.pubinfo.add((
-            nanopub.metadata.namespace[""],
-            NTEMPLATE["wasCreatedFromProvenanceTemplate"],
-            URIRef(NANOPUB_RETRACT_PROVENANCE_TEMPLATE_URI),
-        ))
+        nanopub.pubinfo.add(
+            (
+                nanopub.metadata.namespace[""],
+                NTEMPLATE["wasCreatedFromProvenanceTemplate"],
+                URIRef(NANOPUB_RETRACT_PROVENANCE_TEMPLATE_URI),
+            )
+        )
 
     for template_uri in NANOPUB_RETRACT_PUBINFO_TEMPLATE_URIS:
-        nanopub.pubinfo.add((
-            nanopub.metadata.namespace[""],
-            NTEMPLATE["wasCreatedFromPubinfoTemplate"],
-            URIRef(template_uri),
-        ))
+        nanopub.pubinfo.add(
+            (
+                nanopub.metadata.namespace[""],
+                NTEMPLATE["wasCreatedFromPubinfoTemplate"],
+                URIRef(template_uri),
+            )
+        )
 
     if NANOPUB_RETRACT_TEMPLATE_URI:
-        nanopub.pubinfo.add((
-            nanopub.metadata.namespace[""],
-            NTEMPLATE["wasCreatedFromTemplate"],
-            URIRef(NANOPUB_RETRACT_TEMPLATE_URI),
-        ))
+        nanopub.pubinfo.add(
+            (
+                nanopub.metadata.namespace[""],
+                NTEMPLATE["wasCreatedFromTemplate"],
+                URIRef(NANOPUB_RETRACT_TEMPLATE_URI),
+            )
+        )
 
     return nanopub
 
