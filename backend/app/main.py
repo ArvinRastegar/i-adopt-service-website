@@ -1061,7 +1061,7 @@ def json_to_ttl_repo_style(pred: Dict[str, Any]) -> str:
             "    a fdof:FAIRDigitalObject ,",
             "      iop:Variable ;",
             f"    dct:conformsTo <{IADOPT_VARIABLE_CONFORMS_TO}> ;",
-            # f"    rdfs:label {_ttl_quote(main_label)} ;",
+            f"    rdfs:label {_ttl_quote(main_label)} ;",
             f"    skos:prefLabel {_ttl_quote(pref_label)} ;",
             f"    skos:altLabel {_ttl_quote(alt_label)} ;",
             f"    skos:definition {_ttl_quote(definition)} ;",
