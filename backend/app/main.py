@@ -8,7 +8,7 @@ import random
 import re
 import urllib.parse
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from dotenv import load_dotenv
 import httpx
@@ -17,6 +17,7 @@ from nanopub.namespaces import NPX, NTEMPLATE, PAV
 import requests
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from jsonschema import Draft202012Validator
 from openai import APIStatusError, OpenAI, OpenAIError
 from pydantic import BaseModel, Field
@@ -94,6 +95,7 @@ DEFAULT_MODEL_NAMES = [
     "qwen/qwen3.5-flash-02-23",
     "qwen/qwen3-32b",
     "qwen/qwen3.5-397b-a17b",
+    "google/gemini-3-flash-preview",
 ]
 
 # MODEL_NAME = os.getenv("MODEL_NAME", "qwen/qwen3.5-397b-a17b")
@@ -470,22 +472,14 @@ def call_model(model: str, prompt: str, temperature: float, disable_thinking: bo
 
     for attempt in range(1, 4):
         try:
-            request_kwargs: Dict[str, Any] = {
-                "model": model,
-                "temperature": temperature,
-                "messages": [{"role": "user", "content": prompt}],
-                "timeout": 60,
-            }
-
-            # The default mode intentionally sends no reasoning override so the provider keeps its normal thinking behavior.
-            if disable_thinking:
-                request_kwargs["extra_body"] = {
-                    "reasoning": {
-                        "effort": "none",
-                    }
-                }
-
-            resp = client.chat.completions.create(**request_kwargs)
+            resp = client.chat.completions.create(
+                **_build_chat_completion_request_kwargs(
+                    model,
+                    prompt,
+                    temperature,
+                    disable_thinking=disable_thinking,
+                )
+            )
             text = resp.choices[0].message.content or ""
             stripped = text.strip()
 
@@ -544,11 +538,102 @@ def _resolve_model_name(requested_model_name: Optional[str]) -> str:
         selected_model = MODEL_NAME
 
     if selected_model not in MODEL_NAMES:
-        raise ValueError(
-            f"Unsupported model '{selected_model}'. Allowed models: {', '.join(MODEL_NAMES)}"
-        )
+        raise ValueError(f"Unsupported model '{selected_model}'. Allowed models: {', '.join(MODEL_NAMES)}")
 
     return selected_model
+
+
+def _build_chat_completion_request_kwargs(
+    model: str,
+    prompt: str,
+    temperature: float,
+    *,
+    disable_thinking: bool = False,
+    stream: bool = False,
+) -> Dict[str, Any]:
+    request_kwargs: Dict[str, Any] = {
+        "model": model,
+        "temperature": temperature,
+        "messages": [{"role": "user", "content": prompt}],
+        "timeout": 60,
+    }
+
+    if stream:
+        request_kwargs["stream"] = True
+
+    # The default mode intentionally sends no reasoning override so the provider keeps its normal thinking behavior.
+    if disable_thinking:
+        request_kwargs["extra_body"] = {
+            "reasoning": {
+                "effort": "none",
+            }
+        }
+
+    return request_kwargs
+
+
+def _as_plain_data(value: Any) -> Any:
+    if value is None:
+        return None
+    if hasattr(value, "model_dump"):
+        try:
+            return value.model_dump(exclude_none=True)
+        except Exception:
+            return value
+    if isinstance(value, list):
+        return [_as_plain_data(item) for item in value]
+    if isinstance(value, tuple):
+        return [_as_plain_data(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _as_plain_data(item) for key, item in value.items()}
+    return value
+
+
+def _flatten_text_fragments(value: Any) -> str:
+    plain_value = _as_plain_data(value)
+
+    if plain_value is None:
+        return ""
+    if isinstance(plain_value, str):
+        return plain_value
+    if isinstance(plain_value, list):
+        return "".join(_flatten_text_fragments(item) for item in plain_value)
+    if isinstance(plain_value, dict):
+        fragments: List[str] = []
+
+        for key in ("text", "summary", "reasoning"):
+            if key in plain_value:
+                fragments.append(_flatten_text_fragments(plain_value[key]))
+
+        if fragments:
+            return "".join(fragments)
+
+    return ""
+
+
+def _extract_stream_text_deltas(chunk: Any) -> Tuple[str, str]:
+    choices = getattr(chunk, "choices", None) or []
+    if not choices:
+        return "", ""
+
+    delta = getattr(choices[0], "delta", None)
+    if delta is None:
+        return "", ""
+
+    content_delta = _flatten_text_fragments(getattr(delta, "content", None))
+
+    reasoning_fragments: List[str] = []
+    for attr_name in ("reasoning", "reasoning_content", "reasoning_text"):
+        reasoning_fragments.append(_flatten_text_fragments(getattr(delta, attr_name, None)))
+
+    reasoning_fragments.append(_flatten_text_fragments(getattr(delta, "reasoning_details", None)))
+
+    reasoning_delta = "".join(fragment for fragment in reasoning_fragments if fragment)
+    return reasoning_delta, content_delta
+
+
+def _stream_event(event_type: str, **payload: Any) -> str:
+    return json.dumps({"type": event_type, **payload}, ensure_ascii=False) + "\n"
 
 
 def call_llm_loose(
@@ -574,6 +659,35 @@ def call_llm_loose(
             print(f"LLM parse attempt {attempt} failed: {e}")
 
     return last_raw, {}
+
+
+def _finalize_pipeline_output(raw_llm_output: str, pred: Dict[str, Any]) -> Dict[str, Any]:
+    if not pred:
+        raise RuntimeError("Could not extract valid JSON from the model output.")
+
+    validation_errors = get_schema_validation_errors(pred, label_for_logs=pred.get("label"))
+    validation_errors.extend(_get_constraint_semantic_validation_errors(pred))
+    schema_valid = len(validation_errors) == 0
+
+    if ENABLE_WIKIDATA_LINKING:
+        try:
+            enriched = enrich_with_uris_cross_encoder(pred, threshold=RERANK_THRESHOLD)
+        except Exception as e:
+            print(f"Wikidata enrichment failed: {e}")
+            enriched = pred
+    else:
+        enriched = pred
+
+    ttl = json_to_ttl_repo_style(enriched)
+
+    return {
+        "raw_llm_output": raw_llm_output,
+        "parsed_json": pred,
+        "schema_valid": schema_valid,
+        "validation_errors": validation_errors,
+        "enriched_json": enriched,
+        "ttl": ttl,
+    }
 
 
 # ======================================================================================
@@ -851,6 +965,88 @@ def _lookup_key(text: str) -> str:
     return _normalize_text(text).lower()
 
 
+def _normalize_constraint_phrase_for_alt_label(label: str) -> str:
+    """Convert extracted constraint labels into natural phrases for alt-label assembly without changing the TTL label."""
+    clean_label = _normalize_text(label)
+
+    if re.match(r"^location\s*:\s*", clean_label, re.IGNORECASE):
+        clean_label = re.sub(r"^location\s*:\s*", "", clean_label, flags=re.IGNORECASE)
+        if clean_label and not re.match(r"^(at|in|on|near|above|below|under|over|within|outside|around)\b", clean_label, re.IGNORECASE):
+            clean_label = f"at {clean_label}"
+
+    return clean_label
+
+
+def _collect_constraint_target_keys(pred: Dict[str, Any]) -> List[str]:
+    """Return the normalized labels of the actual property/entity targets that constraints are allowed to point at."""
+    keys: List[str] = []
+
+    def add_value(value: Any) -> None:
+        if isinstance(value, str):
+            clean_value = _lookup_key(value)
+            if clean_value:
+                keys.append(clean_value)
+            return
+
+        if not isinstance(value, dict):
+            return
+
+        for field_name in (
+            "AsymmetricSystem",
+            "SymmetricSystem",
+            "hasSource",
+            "hasTarget",
+            "hasNumerator",
+            "hasDenominator",
+        ):
+            add_value(value.get(field_name))
+
+        for part_label in value.get("hasPart") or []:
+            add_value(part_label)
+
+    for field_name in (
+        "hasProperty",
+        "hasObjectOfInterest",
+        "hasStatisticalModifier",
+        "hasMatrix",
+        "hasContextObject",
+    ):
+        add_value(pred.get(field_name))
+
+    seen = set()
+    ordered: List[str] = []
+    for key in keys:
+        if key and key not in seen:
+            seen.add(key)
+            ordered.append(key)
+
+    return ordered
+
+
+def _get_constraint_semantic_validation_errors(pred: Dict[str, Any]) -> List[str]:
+    """Flag constraints whose `on` target does not match any real property/entity label in the prediction."""
+    allowed_targets = _collect_constraint_target_keys(pred)
+    if not allowed_targets:
+        return []
+
+    errors: List[str] = []
+    for idx, constraint in enumerate(pred.get("hasConstraint") or [], start=1):
+        if not isinstance(constraint, dict):
+            continue
+
+        constraint_on = _lookup_key(constraint.get("on") or "")
+        if not constraint_on or constraint_on in allowed_targets:
+            continue
+
+        errors.append(
+            f"Constraint target error at $.hasConstraint[{idx - 1}].on: "
+            f"'{constraint.get('on')}' does not match any extracted property/entity label. "
+            f"Allowed targets: {', '.join(allowed_targets)}"
+        )
+
+    return errors
+
+
 def _make_variable_identity() -> Tuple[str, str, str]:
     """Create the new variable URI, its textual identifier, and the UTC timestamp literal from one clock read."""
     created_at = datetime.now(timezone.utc).replace(microsecond=0)
@@ -980,6 +1176,7 @@ def json_to_ttl_repo_style(pred: Dict[str, Any]) -> str:
     pref_label = _normalize_text(pred.get("label") or "generated variable")
     main_label = _format_main_label(pref_label)
     definition = _normalize_text(pred.get("definition") or "")
+    comment = _normalize_text(pred.get("comment") or "")
     variable_uri, variable_identifier, created_literal = _make_variable_identity()
     orcid_suffix = _orcid_suffix(NANOPUB_ORCID_ID) or "0000-0000-0000-0000"
 
@@ -1101,13 +1298,18 @@ def json_to_ttl_repo_style(pred: Dict[str, Any]) -> str:
         if not isinstance(constraint, dict):
             continue
 
+        constraint_on_raw = constraint.get("on") or ""
         constraint_label = _normalize_text(constraint.get("label") or "")
+        alt_constraint_label = _normalize_constraint_phrase_for_alt_label(constraint_label)
         constraint_on = _lookup_key(constraint.get("on") or "")
         if not constraint_label or not constraint_on:
             continue
 
-        target_ref, target_role = constraint_targets.get(constraint_on, (f"<{variable_uri}>", "variable"))
-        constraints_by_role.setdefault(target_role, []).append(constraint_label)
+        target_ref, target_role = constraint_targets.get(constraint_on, (None, None))
+        if not target_ref or not target_role:
+            continue
+
+        constraints_by_role.setdefault(target_role, []).append(alt_constraint_label)
         constraint_ref = f"_:c{idx}"
         constraint_refs.append(constraint_ref)
         blocks.append(
@@ -1122,6 +1324,7 @@ def json_to_ttl_repo_style(pred: Dict[str, Any]) -> str:
         )
 
     alt_label, formula_name = _build_alt_label(formula_context, constraints_by_role)
+    ttl_comment = comment or _make_comment(formula_name)
 
     variable_lines.extend(
         [
@@ -1133,7 +1336,7 @@ def json_to_ttl_repo_style(pred: Dict[str, Any]) -> str:
             f"    skos:prefLabel {_ttl_quote(pref_label)} ;",
             f"    skos:altLabel {_ttl_quote(alt_label)} ;",
             f"    skos:definition {_ttl_quote(definition)} ;",
-            f"    rdfs:comment {_ttl_quote(_make_comment(formula_name))} ;",
+            f"    rdfs:comment {_ttl_quote(ttl_comment)} ;",
             f"    dct:identifier {_ttl_quote(variable_identifier)} ;",
             # f'    dct:created "{created_literal}"^^xsd:dateTime ;',
             # f"    dct:creator orcid:{orcid_suffix} ;",
@@ -1172,7 +1375,7 @@ def json_to_ttl_repo_style(pred: Dict[str, Any]) -> str:
 # ======================================================================================
 
 
-def run_pipeline(definition: str, disable_thinking: bool = False, model_name: Optional[str] = None) -> Dict[str, Any]:
+def _prepare_pipeline_inputs(definition: str, model_name: Optional[str] = None) -> Tuple[str, str]:
     definition = definition.strip()
     if not definition:
         raise ValueError("Definition must not be empty.")
@@ -1188,6 +1391,135 @@ def run_pipeline(definition: str, disable_thinking: bool = False, model_name: Op
     prompt = build_prompt(definition, prompt_version=prompt_version, examples=examples_5)
     selected_model_name = _resolve_model_name(model_name)
 
+    return prompt, selected_model_name
+
+
+def stream_pipeline_events(
+    definition: str,
+    *,
+    disable_thinking: bool = False,
+    model_name: Optional[str] = None,
+) -> Iterator[str]:
+    try:
+        definition = definition.strip()
+        prompt, selected_model_name = _prepare_pipeline_inputs(definition, model_name=model_name)
+        client = get_openai_client()
+        all_display_parts: List[str] = []
+        last_error_message = "Could not extract valid JSON from the model output."
+
+        for attempt in range(1, 4):
+            attempt_display_parts: List[str] = []
+            attempt_content_parts: List[str] = []
+            saw_reasoning = False
+            started_content = False
+            streamed_any_chunk = False
+
+            if attempt > 1:
+                retry_note = "\n\n[Retrying after the previous streamed response did not yield valid JSON.]\n\n"
+                all_display_parts.append(retry_note)
+                yield _stream_event("raw_delta", delta=retry_note)
+
+            try:
+                stream = client.chat.completions.create(
+                    **_build_chat_completion_request_kwargs(
+                        selected_model_name,
+                        prompt,
+                        TEMPERATURE,
+                        disable_thinking=disable_thinking,
+                        stream=True,
+                    )
+                )
+
+                for chunk in stream:
+                    reasoning_delta, content_delta = _extract_stream_text_deltas(chunk)
+
+                    if reasoning_delta:
+                        streamed_any_chunk = True
+                        saw_reasoning = True
+                        attempt_display_parts.append(reasoning_delta)
+                        yield _stream_event("raw_delta", delta=reasoning_delta)
+
+                    if content_delta:
+                        streamed_any_chunk = True
+                        if saw_reasoning and not started_content:
+                            separator = "\n\n"
+                            attempt_display_parts.append(separator)
+                            yield _stream_event("raw_delta", delta=separator)
+                        started_content = True
+                        attempt_display_parts.append(content_delta)
+                        attempt_content_parts.append(content_delta)
+                        yield _stream_event("raw_delta", delta=content_delta)
+
+                attempt_display = "".join(attempt_display_parts)
+                attempt_content = "".join(attempt_content_parts)
+
+                if attempt_display:
+                    all_display_parts.append(attempt_display)
+
+                stripped_content = attempt_content.strip()
+                if stripped_content.startswith("<!DOCTYPE html") or stripped_content.startswith("<html"):
+                    last_error_message = "The model returned HTML instead of JSON."
+                    continue
+                if not stripped_content:
+                    last_error_message = "The streamed model response was empty."
+                    continue
+
+                try:
+                    pred = parse_llm_json(attempt_content, definition)
+                except Exception as e:
+                    last_error_message = str(e)
+                    print(f"LLM parse attempt {attempt} failed: {e}")
+                    continue
+
+                final_payload = _finalize_pipeline_output("".join(all_display_parts), pred)
+                yield _stream_event("final", data=final_payload)
+                return
+
+            except APIStatusError as e:
+                last_error_message = str(e)
+                print(f"APIStatusError attempt {attempt}: {e}")
+            except (OpenAIError, httpx.HTTPError) as e:
+                last_error_message = str(e)
+                print(f"Transport error attempt {attempt}: {e}")
+            except Exception as e:
+                last_error_message = str(e)
+                print(f"Unexpected streaming error attempt {attempt}: {e}")
+
+            if not streamed_any_chunk:
+                fallback_raw = call_model(
+                    selected_model_name,
+                    prompt,
+                    TEMPERATURE,
+                    disable_thinking=disable_thinking,
+                )
+                fallback_display = fallback_raw or ""
+                if fallback_display:
+                    all_display_parts.append(fallback_display)
+                    yield _stream_event("raw_delta", delta=fallback_display)
+                    try:
+                        pred = parse_llm_json(fallback_raw, definition)
+                        final_payload = _finalize_pipeline_output("".join(all_display_parts), pred)
+                        yield _stream_event("final", data=final_payload)
+                        return
+                    except Exception as e:
+                        last_error_message = str(e)
+                        print(f"Fallback parse attempt {attempt} failed: {e}")
+
+        yield _stream_event(
+            "error", detail=f"Could not extract valid JSON from the model output. Last error: {last_error_message}"
+        )
+    except ValueError as e:
+        yield _stream_event("error", detail=str(e))
+    except RuntimeError as e:
+        yield _stream_event("error", detail=str(e))
+    except Exception as e:
+        yield _stream_event("error", detail=f"Unexpected backend error: {e}")
+
+
+def run_pipeline(definition: str, disable_thinking: bool = False, model_name: Optional[str] = None) -> Dict[str, Any]:
+    definition = definition.strip()
+    prompt, selected_model_name = _prepare_pipeline_inputs(definition, model_name=model_name)
+
     raw_llm_output, pred = call_llm_loose(
         selected_model_name,
         prompt,
@@ -1195,32 +1527,7 @@ def run_pipeline(definition: str, disable_thinking: bool = False, model_name: Op
         temperature=TEMPERATURE,
         disable_thinking=disable_thinking,
     )
-
-    if not pred:
-        raise RuntimeError("Could not extract valid JSON from the model output.")
-
-    validation_errors = get_schema_validation_errors(pred, label_for_logs=pred.get("label"))
-    schema_valid = len(validation_errors) == 0
-
-    if ENABLE_WIKIDATA_LINKING:
-        try:
-            enriched = enrich_with_uris_cross_encoder(pred, threshold=RERANK_THRESHOLD)
-        except Exception as e:
-            print(f"Wikidata enrichment failed: {e}")
-            enriched = pred
-    else:
-        enriched = pred
-
-    ttl = json_to_ttl_repo_style(enriched)
-
-    return {
-        "raw_llm_output": raw_llm_output,
-        "parsed_json": pred,
-        "schema_valid": schema_valid,
-        "validation_errors": validation_errors,
-        "enriched_json": enriched,
-        "ttl": ttl,
-    }
+    return _finalize_pipeline_output(raw_llm_output, pred)
 
 
 # ======================================================================================
@@ -1450,6 +1757,19 @@ def health() -> Dict[str, Any]:
 def model_options() -> ModelOptionsResponse:
     """Expose the backend-managed list of allowed model names for the frontend dropdown."""
     return ModelOptionsResponse(default_model_name=MODEL_NAME, model_names=MODEL_NAMES)
+
+
+@app.post("/decompose/stream")
+def decompose_stream(req: DecomposeRequest) -> StreamingResponse:
+    """Stream raw LLM output chunks first, then emit the final structured decompose payload."""
+    return StreamingResponse(
+        stream_pipeline_events(
+            req.definition,
+            disable_thinking=req.disable_thinking,
+            model_name=req.model_name,
+        ),
+        media_type="application/x-ndjson",
+    )
 
 
 @app.post("/decompose", response_model=DecomposeResponse)

@@ -195,6 +195,14 @@ function setDecomposeButtonState(isLoading) {
   if (thinkingToggle) thinkingToggle.disabled = isLoading;
 }
 
+function appendRawOutputDelta(delta) {
+  const rawOutputEl = document.querySelector('#rawOutput');
+  if (!rawOutputEl || !delta) return;
+
+  rawOutputEl.value += delta;
+  rawOutputEl.scrollTop = rawOutputEl.scrollHeight;
+}
+
 function renderModelOptions(modelNames = FALLBACK_MODEL_NAMES, defaultModelName = FALLBACK_MODEL_NAME) {
   const modelSelect = document.querySelector('#modelSelect');
   if (!modelSelect) return;
@@ -255,32 +263,95 @@ async function decomposeDefinition() {
   try {
     isDecomposing = true;
     setDecomposeButtonState(true);
-    const response = await fetch(`${BACKEND_URL}/decompose`, {
+    const response = await fetch(`${BACKEND_URL}/decompose/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       // The backend treats the absence of the override as normal thinking, so we only send a boolean flag here.
       body: JSON.stringify({ definition, model_name: modelName, disable_thinking: disableThinking }),
     });
 
-    const data = await response.json();
-
     if (!response.ok) {
-      throw new Error(data.detail || 'Backend request failed.');
+      let detail = 'Backend request failed.';
+
+      try {
+        const errorData = await response.json();
+        detail = errorData.detail || detail;
+      } catch (error) {
+        try {
+          detail = (await response.text()) || detail;
+        } catch (textError) {
+          console.error(textError);
+        }
+      }
+
+      throw new Error(detail);
+    }
+
+    if (!response.body) {
+      throw new Error('The backend did not return a readable stream.');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let finalPayload = null;
+
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+
+      let newlineIndex = buffer.indexOf('\n');
+      while (newlineIndex !== -1) {
+        const line = buffer.slice(0, newlineIndex).trim();
+        buffer = buffer.slice(newlineIndex + 1);
+
+        if (line) {
+          const event = JSON.parse(line);
+
+          if (event.type === 'raw_delta') {
+            appendRawOutputDelta(event.delta || '');
+          } else if (event.type === 'error') {
+            throw new Error(event.detail || 'Streaming backend error.');
+          } else if (event.type === 'final') {
+            finalPayload = event.data || null;
+          }
+        }
+
+        newlineIndex = buffer.indexOf('\n');
+      }
+
+      if (done) break;
+    }
+
+    const trailingLine = buffer.trim();
+    if (trailingLine) {
+      const event = JSON.parse(trailingLine);
+      if (event.type === 'raw_delta') {
+        appendRawOutputDelta(event.delta || '');
+      } else if (event.type === 'error') {
+        throw new Error(event.detail || 'Streaming backend error.');
+      } else if (event.type === 'final') {
+        finalPayload = event.data || null;
+      }
+    }
+
+    if (!finalPayload) {
+      throw new Error('The backend stream ended before returning the final decomposition payload.');
     }
 
     if (rawOutputEl) {
-      rawOutputEl.value = data.raw_llm_output || '';
+      rawOutputEl.value = finalPayload.raw_llm_output || rawOutputEl.value;
     }
 
     if (ttlEl) {
-      ttlEl.value = data.ttl || '';
+      ttlEl.value = finalPayload.ttl || '';
     }
 
-    if ((data.ttl || '').trim()) {
+    if ((finalPayload.ttl || '').trim()) {
       await visualizeTTL(); // auto-run visualize once API returned TTL
     }
 
-    renderValidationErrors(data.validation_errors || []);
+    renderValidationErrors(finalPayload.validation_errors || []);
     setDecomposeStatus('Decomposition finished.');
 
   } catch (e) {
