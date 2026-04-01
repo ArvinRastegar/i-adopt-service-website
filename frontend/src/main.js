@@ -186,6 +186,7 @@ function setDecomposeButtonState(isLoading) {
   const button = document.querySelector('#decompose');
   const modelSelect = document.querySelector('#modelSelect');
   const thinkingToggle = document.querySelector('#disableThinkingToggle');
+  const creatorOrcidInput = document.querySelector('#creatorOrcidInput');
   if (!button) return;
 
   button.disabled = isLoading;
@@ -193,6 +194,7 @@ function setDecomposeButtonState(isLoading) {
   button.classList.toggle('is-loading', isLoading);
   if (modelSelect) modelSelect.disabled = isLoading;
   if (thinkingToggle) thinkingToggle.disabled = isLoading;
+  if (creatorOrcidInput) creatorOrcidInput.disabled = isLoading;
 }
 
 function appendRawOutputDelta(delta) {
@@ -201,6 +203,18 @@ function appendRawOutputDelta(delta) {
 
   rawOutputEl.value += delta;
   rawOutputEl.scrollTop = rawOutputEl.scrollHeight;
+}
+
+function getCreatorMetadataOverrides() {
+  return {
+    creator_orcid_id: document.querySelector('#creatorOrcidInput')?.value?.trim() || undefined,
+  };
+}
+
+function getRetractCreatorMetadataOverrides() {
+  return {
+    creator_orcid_id: document.querySelector('#retractCreatorOrcidInput')?.value?.trim() || undefined,
+  };
 }
 
 function renderModelOptions(modelNames = FALLBACK_MODEL_NAMES, defaultModelName = FALLBACK_MODEL_NAME) {
@@ -244,6 +258,7 @@ async function decomposeDefinition() {
   const definition = document.querySelector('#definitionInput')?.value?.trim();
   const modelName = document.querySelector('#modelSelect')?.value?.trim() || FALLBACK_MODEL_NAME;
   const disableThinking = Boolean(document.querySelector('#disableThinkingToggle')?.checked);
+  const creatorMetadata = getCreatorMetadataOverrides();
   const rawOutputEl = document.querySelector('#rawOutput');
   const ttlEl = document.querySelector('#input');
 
@@ -267,7 +282,12 @@ async function decomposeDefinition() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       // The backend treats the absence of the override as normal thinking, so we only send a boolean flag here.
-      body: JSON.stringify({ definition, model_name: modelName, disable_thinking: disableThinking }),
+      body: JSON.stringify({
+        definition,
+        model_name: modelName,
+        disable_thinking: disableThinking,
+        ...creatorMetadata,
+      }),
     });
 
     if (!response.ok) {
@@ -369,6 +389,7 @@ async function publishNanopub() {
   // Open the tab before the network roundtrip so browsers keep the user-triggered popup allowance.
   const publishTab = window.open('', '_blank', 'noopener,noreferrer');
   const ttl = getCurrentTurtle().trim();
+  const creatorMetadata = getCreatorMetadataOverrides();
 
   if (!ttl) {
     if (publishTab) publishTab.close();
@@ -381,7 +402,7 @@ async function publishNanopub() {
     const response = await fetch(`${BACKEND_URL}/nanopub/publish`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ttl }),
+      body: JSON.stringify({ ttl, ...creatorMetadata }),
     });
 
     const data = await response.json();
@@ -425,6 +446,7 @@ async function retractNanopub() {
   const retractTab = window.open('', '_blank', 'noopener,noreferrer');
   const manualReference = getManualRetractReference();
   const selectedEntry = getSelectedPublishedNanopub();
+  const retractCreatorMetadata = getRetractCreatorMetadataOverrides();
   const targetReference = manualReference || selectedEntry?.nanopubUrl;
   const targetLabel = manualReference || selectedEntry?.variableIdentifier || 'selected nanopublication';
 
@@ -439,7 +461,7 @@ async function retractNanopub() {
     const response = await fetch(`${BACKEND_URL}/nanopub/retract`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nanopub_uri: targetReference }),
+      body: JSON.stringify({ nanopub_uri: targetReference, ...retractCreatorMetadata }),
     });
 
     const data = await response.json();

@@ -108,7 +108,6 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 NANOPUB_PRIVATE_KEY = os.getenv("NANOPUB_PRIVATE_KEY")
 NANOPUB_PUBLIC_KEY = os.getenv("NANOPUB_PUBLIC_KEY")
 NANOPUB_ORCID_ID = os.getenv("NANOPUB_ORCID_ID")
-NANOPUB_PROFILE_NAME = os.getenv("NANOPUB_PROFILE_NAME")
 NANOPUB_AGENT_INTRO_URI = os.getenv("NANOPUB_AGENT_INTRO_URI")
 NANOPUB_PUBLISH_SERVER = os.getenv("NANOPUB_PUBLISH_SERVER", "https://registry.petapico.org/np/")
 NANOPUB_LICENSE_URI = os.getenv("NANOPUB_LICENSE_URI", "https://creativecommons.org/licenses/by/4.0/")
@@ -150,10 +149,10 @@ NANOPUB_RETRACT_PUBINFO_TEMPLATE_URIS = [
     ).split(",")
     if uri.strip()
 ]
-# IADOPT_CREATED_WITH_LABEL = os.getenv(
-#     "IADOPT_CREATED_WITH_LABEL",
-#     "LLM-assisted I-ADOPT variable generation",
-# )
+IADOPT_CREATED_WITH_LABEL = os.getenv(
+    "IADOPT_CREATED_WITH_LABEL",
+    "LLM-assisted I-ADOPT variable generation",
+)
 
 CROSS_ENCODER_ID = os.getenv("CROSS_ENCODER_ID", "tomaarsen/Qwen3-Reranker-0.6B-seq-cls")
 RERANK_DEVICE = os.getenv("RERANK_DEVICE", "cpu")
@@ -207,6 +206,10 @@ MODEL_NAMES = _load_model_names()
 class DecomposeRequest(BaseModel):
     definition: str = Field(..., min_length=1, description="Variable definition in plain text")
     model_name: Optional[str] = Field(default=None, description="One of the backend-configured model names to use.")
+    creator_orcid_id: Optional[str] = Field(
+        default=None,
+        description="Optional ORCID override for TTL/provenance metadata; falls back to NANOPUB_ORCID_ID when omitted.",
+    )
     disable_thinking: bool = Field(
         default=False,
         description="When true, request the model without reasoning effort by sending `reasoning.effort = none`.",
@@ -229,6 +232,10 @@ class ModelOptionsResponse(BaseModel):
 
 class PublishNanopubRequest(BaseModel):
     ttl: str = Field(..., min_length=1, description="TTL assertion payload currently shown in the frontend")
+    creator_orcid_id: Optional[str] = Field(
+        default=None,
+        description="Optional ORCID override for provenance/pubinfo metadata; falls back to NANOPUB_ORCID_ID when omitted.",
+    )
 
 
 class PublishNanopubResponse(BaseModel):
@@ -241,6 +248,10 @@ class PublishNanopubResponse(BaseModel):
 class RetractNanopubRequest(BaseModel):
     nanopub_uri: str = Field(
         ..., min_length=1, description="The published nanopub URI or Nanodash explore URL to retract"
+    )
+    creator_orcid_id: Optional[str] = Field(
+        default=None,
+        description="Optional ORCID override for retraction provenance/pubinfo metadata; falls back to NANOPUB_ORCID_ID when omitted.",
     )
 
 
@@ -258,6 +269,7 @@ _openai_client: Optional[OpenAI] = None
 _reranker: Optional[CrossEncoder] = None
 _nanopub_profile: Optional[Profile] = None
 _nanopub_agent_uri_cache: Optional[str] = None
+_orcid_name_cache: Dict[str, Optional[str]] = {}
 
 
 def get_openai_client() -> OpenAI:
@@ -330,6 +342,120 @@ def _orcid_suffix(orcid_id: Optional[str]) -> Optional[str]:
     return normalized.rstrip("/").rsplit("/", 1)[-1]
 
 
+def _extract_orcid_display_name(payload: Any) -> Optional[str]:
+    """Pull a human-readable name from either ORCID's public JSON-LD or record-style JSON payloads."""
+    if not isinstance(payload, dict):
+        return None
+
+    direct_name = _normalize_text(payload.get("name") if isinstance(payload.get("name"), str) else "")
+    if direct_name:
+        return direct_name
+
+    name_node = payload.get("name")
+    if isinstance(name_node, dict):
+        credit_name = name_node.get("credit-name")
+        if isinstance(credit_name, dict):
+            value = _normalize_text(credit_name.get("value") or "")
+            if value:
+                return value
+        elif isinstance(credit_name, str):
+            value = _normalize_text(credit_name)
+            if value:
+                return value
+
+        given_names = name_node.get("given-names")
+        family_name = name_node.get("family-name")
+        given_value = _normalize_text(given_names.get("value") if isinstance(given_names, dict) else given_names or "")
+        family_value = _normalize_text(family_name.get("value") if isinstance(family_name, dict) else family_name or "")
+        combined = _normalize_text(f"{given_value} {family_value}")
+        if combined:
+            return combined
+
+    given_name = payload.get("givenName")
+    family_name = payload.get("familyName")
+    given_value = _normalize_text(given_name.get("name") if isinstance(given_name, dict) else given_name or "")
+    family_value = _normalize_text(family_name.get("name") if isinstance(family_name, dict) else family_name or "")
+    combined = _normalize_text(f"{given_value} {family_value}")
+    if combined:
+        return combined
+
+    return None
+
+
+def _lookup_orcid_display_name(orcid_id: Optional[str]) -> Optional[str]:
+    """Resolve the public display name for an ORCID by using ORCID's content-negotiated public record."""
+    normalized_orcid = _normalize_orcid(orcid_id)
+    if not normalized_orcid:
+        return None
+
+    if normalized_orcid in _orcid_name_cache:
+        return _orcid_name_cache[normalized_orcid]
+
+    try:
+        response = get_http_session().get(
+            normalized_orcid,
+            headers={
+                # ORCID documents content negotiation on the registry URL itself, so prefer machine-readable forms.
+                "Accept": "application/ld+json, application/json;q=0.9, text/html;q=0.8",
+            },
+            timeout=20,
+        )
+        response.raise_for_status()
+    except Exception:
+        _orcid_name_cache[normalized_orcid] = None
+        return None
+
+    resolved_name: Optional[str] = None
+    body = response.text
+    content_type = response.headers.get("Content-Type", "").lower()
+
+    if "json" in content_type or body.lstrip().startswith("{"):
+        try:
+            resolved_name = _extract_orcid_display_name(response.json())
+        except Exception:
+            resolved_name = None
+
+    if not resolved_name and "<script" in body:
+        for match in re.finditer(
+            r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
+            body,
+            re.IGNORECASE | re.DOTALL,
+        ):
+            try:
+                resolved_name = _extract_orcid_display_name(json.loads(match.group(1).strip()))
+            except Exception:
+                resolved_name = None
+            if resolved_name:
+                break
+
+    if not resolved_name:
+        meta_match = re.search(
+            r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)["\']',
+            body,
+            re.IGNORECASE,
+        )
+        if meta_match:
+            resolved_name = _normalize_text(meta_match.group(1))
+
+    _orcid_name_cache[normalized_orcid] = resolved_name
+    return resolved_name
+
+
+def _resolve_creator_metadata(creator_orcid_id: Optional[str] = None) -> Tuple[str, str]:
+    resolved_orcid = _normalize_orcid(creator_orcid_id) or _normalize_orcid(NANOPUB_ORCID_ID)
+    resolved_profile_name = _lookup_orcid_display_name(resolved_orcid)
+
+    if not resolved_orcid:
+        raise RuntimeError("No creator ORCID is configured. Provide it in the request or set NANOPUB_ORCID_ID.")
+
+    if not resolved_profile_name:
+        raise RuntimeError(
+            "No public creator name could be resolved from the selected ORCID. Use an ORCID with a public name."
+        )
+
+    return resolved_orcid, resolved_profile_name
+
+
 def get_nanopub_profile() -> Profile:
     """Load the signing profile from `.env` so backend publication never depends on frontend secrets."""
     global _nanopub_profile
@@ -340,14 +466,19 @@ def get_nanopub_profile() -> Profile:
             missing.append("NANOPUB_PRIVATE_KEY")
         if not NANOPUB_ORCID_ID:
             missing.append("NANOPUB_ORCID_ID")
-        if not NANOPUB_PROFILE_NAME:
-            missing.append("NANOPUB_PROFILE_NAME")
         if missing:
             raise RuntimeError(f"Missing nanopub publishing configuration: {', '.join(missing)}")
 
+        signing_orcid = _normalize_orcid(NANOPUB_ORCID_ID)
+        signing_name = _lookup_orcid_display_name(signing_orcid)
+        if not signing_name:
+            raise RuntimeError(
+                "No signing profile name is available from NANOPUB_ORCID_ID. Use an ORCID with a public name."
+            )
+
         _nanopub_profile = Profile(
-            orcid_id=_normalize_orcid(NANOPUB_ORCID_ID),
-            name=NANOPUB_PROFILE_NAME,
+            orcid_id=signing_orcid,
+            name=signing_name,
             private_key=_normalize_nanopub_key(NANOPUB_PRIVATE_KEY),
             public_key=_normalize_nanopub_key(NANOPUB_PUBLIC_KEY),
         )
@@ -661,7 +792,12 @@ def call_llm_loose(
     return last_raw, {}
 
 
-def _finalize_pipeline_output(raw_llm_output: str, pred: Dict[str, Any]) -> Dict[str, Any]:
+def _finalize_pipeline_output(
+    raw_llm_output: str,
+    pred: Dict[str, Any],
+    *,
+    creator_orcid_id: Optional[str] = None,
+) -> Dict[str, Any]:
     if not pred:
         raise RuntimeError("Could not extract valid JSON from the model output.")
 
@@ -678,7 +814,10 @@ def _finalize_pipeline_output(raw_llm_output: str, pred: Dict[str, Any]) -> Dict
     else:
         enriched = pred
 
-    ttl = json_to_ttl_repo_style(enriched)
+    ttl = json_to_ttl_repo_style(
+        enriched,
+        creator_orcid_id=creator_orcid_id,
+    )
 
     return {
         "raw_llm_output": raw_llm_output,
@@ -1171,14 +1310,19 @@ def _build_alt_label(formula_context: Dict[str, str], constraints_by_role: Dict[
     return alt_label or _normalize_text(formula_context.get("pref_label", "")), formula_name
 
 
-def json_to_ttl_repo_style(pred: Dict[str, Any]) -> str:
+def json_to_ttl_repo_style(
+    pred: Dict[str, Any],
+    *,
+    creator_orcid_id: Optional[str] = None,
+) -> str:
     """Serialize the enriched JSON prediction into the new simple I-ADOPT TTL shape required by the frontend."""
     pref_label = _normalize_text(pred.get("label") or "generated variable")
     main_label = _format_main_label(pref_label)
     definition = _normalize_text(pred.get("definition") or "")
     comment = _normalize_text(pred.get("comment") or "")
+    resolved_orcid, resolved_profile_name = _resolve_creator_metadata(creator_orcid_id)
     variable_uri, variable_identifier, created_literal = _make_variable_identity()
-    orcid_suffix = _orcid_suffix(NANOPUB_ORCID_ID) or "0000-0000-0000-0000"
+    orcid_suffix = _orcid_suffix(resolved_orcid) or "0000-0000-0000-0000"
 
     blocks: List[str] = []
     variable_lines: List[str] = []
@@ -1338,10 +1482,10 @@ def json_to_ttl_repo_style(pred: Dict[str, Any]) -> str:
             f"    skos:definition {_ttl_quote(definition)} ;",
             f"    rdfs:comment {_ttl_quote(ttl_comment)} ;",
             f"    dct:identifier {_ttl_quote(variable_identifier)} ;",
-            # f'    dct:created "{created_literal}"^^xsd:dateTime ;',
-            # f"    dct:creator orcid:{orcid_suffix} ;",
-            # f"    pav:createdWith {_ttl_quote(IADOPT_CREATED_WITH_LABEL)} ;",
-            # f"    prov:wasAttributedTo orcid:{orcid_suffix} ;",
+            f'    dct:created "{created_literal}"^^xsd:dateTime ;',
+            f"    dct:creator orcid:{orcid_suffix} ;",
+            f"    pav:createdWith {_ttl_quote(IADOPT_CREATED_WITH_LABEL)} ;",
+            f"    prov:wasAttributedTo orcid:{orcid_suffix} ;",
         ]
     )
 
@@ -1363,7 +1507,7 @@ def json_to_ttl_repo_style(pred: Dict[str, Any]) -> str:
     creator_block = "\n".join(
         [
             f"orcid:{orcid_suffix}",
-            f"    rdfs:label {_ttl_quote(NANOPUB_PROFILE_NAME or 'Unknown creator')} .",
+            f"    rdfs:label {_ttl_quote(resolved_profile_name)} .",
         ]
     )
 
@@ -1399,6 +1543,7 @@ def stream_pipeline_events(
     *,
     disable_thinking: bool = False,
     model_name: Optional[str] = None,
+    creator_orcid_id: Optional[str] = None,
 ) -> Iterator[str]:
     try:
         definition = definition.strip()
@@ -1471,7 +1616,11 @@ def stream_pipeline_events(
                     print(f"LLM parse attempt {attempt} failed: {e}")
                     continue
 
-                final_payload = _finalize_pipeline_output("".join(all_display_parts), pred)
+                final_payload = _finalize_pipeline_output(
+                    "".join(all_display_parts),
+                    pred,
+                    creator_orcid_id=creator_orcid_id,
+                )
                 yield _stream_event("final", data=final_payload)
                 return
 
@@ -1498,7 +1647,11 @@ def stream_pipeline_events(
                     yield _stream_event("raw_delta", delta=fallback_display)
                     try:
                         pred = parse_llm_json(fallback_raw, definition)
-                        final_payload = _finalize_pipeline_output("".join(all_display_parts), pred)
+                        final_payload = _finalize_pipeline_output(
+                            "".join(all_display_parts),
+                            pred,
+                            creator_orcid_id=creator_orcid_id,
+                        )
                         yield _stream_event("final", data=final_payload)
                         return
                     except Exception as e:
@@ -1516,7 +1669,12 @@ def stream_pipeline_events(
         yield _stream_event("error", detail=f"Unexpected backend error: {e}")
 
 
-def run_pipeline(definition: str, disable_thinking: bool = False, model_name: Optional[str] = None) -> Dict[str, Any]:
+def run_pipeline(
+    definition: str,
+    disable_thinking: bool = False,
+    model_name: Optional[str] = None,
+    creator_orcid_id: Optional[str] = None,
+) -> Dict[str, Any]:
     definition = definition.strip()
     prompt, selected_model_name = _prepare_pipeline_inputs(definition, model_name=model_name)
 
@@ -1527,7 +1685,11 @@ def run_pipeline(definition: str, disable_thinking: bool = False, model_name: Op
         temperature=TEMPERATURE,
         disable_thinking=disable_thinking,
     )
-    return _finalize_pipeline_output(raw_llm_output, pred)
+    return _finalize_pipeline_output(
+        raw_llm_output,
+        pred,
+        creator_orcid_id=creator_orcid_id,
+    )
 
 
 # ======================================================================================
@@ -1636,9 +1798,14 @@ def _assert_retraction_allowed(target_nanopub_uri: str, profile: Profile) -> Non
         )
 
 
-def _build_retraction_nanopub(target_nanopub_uri: str, profile: Profile) -> Nanopub:
+def _build_retraction_nanopub(
+    target_nanopub_uri: str,
+    profile: Profile,
+    creator_orcid_id: Optional[str] = None,
+) -> Nanopub:
     """Create the richer retraction nanopub shape that the production registries currently accept."""
-    orcid_uri = URIRef(_normalize_orcid(NANOPUB_ORCID_ID))
+    resolved_orcid, resolved_profile_name = _resolve_creator_metadata(creator_orcid_id)
+    orcid_uri = URIRef(resolved_orcid)
     target_identifier = target_nanopub_uri.rsplit("/", 1)[-1]
     retraction_label = f"Retraction of {target_identifier[:10]}"
 
@@ -1659,7 +1826,7 @@ def _build_retraction_nanopub(target_nanopub_uri: str, profile: Profile) -> Nano
 
     # The registries accept retractions when they mirror the current Nanodash-style pubinfo shape.
     nanopub.provenance.add((nanopub.assertion.identifier, PROV.wasAttributedTo, orcid_uri))
-    nanopub.pubinfo.add((orcid_uri, FOAF.name, Literal(NANOPUB_PROFILE_NAME)))
+    nanopub.pubinfo.add((orcid_uri, FOAF.name, Literal(resolved_profile_name)))
     nanopub.pubinfo.add((nanopub.metadata.namespace[""], DCTERMS.created, _nanopub_created_literal()))
     nanopub.pubinfo.add((nanopub.metadata.namespace[""], DCTERMS.creator, orcid_uri))
     nanopub.pubinfo.add((nanopub.metadata.namespace[""], DCTERMS.license, URIRef(NANOPUB_LICENSE_URI)))
@@ -1703,10 +1870,12 @@ def _add_nanopub_metadata(
     variable_uri: URIRef,
     created_at: Literal,
     agent_uri: Optional[str],
+    creator_orcid_id: Optional[str] = None,
 ) -> None:
     """Mirror the requested provenance and template metadata into the nanopub before signing."""
     nanopub_uri = nanopub.metadata.namespace[""]
-    orcid_uri = URIRef(_normalize_orcid(NANOPUB_ORCID_ID))
+    resolved_orcid, resolved_profile_name = _resolve_creator_metadata(creator_orcid_id)
+    orcid_uri = URIRef(resolved_orcid)
 
     # The provenance graph must describe who is responsible for the assertion and which software agent generated it.
     nanopub.provenance.add((nanopub.assertion.identifier, PROV.wasAttributedTo, orcid_uri))
@@ -1714,7 +1883,7 @@ def _add_nanopub_metadata(
         nanopub.provenance.add((nanopub.assertion.identifier, PROV.wasGeneratedBy, URIRef(agent_uri)))
 
     # The publication info graph mirrors the creator, license, template, and software metadata requested by the user.
-    nanopub.pubinfo.add((orcid_uri, FOAF.name, Literal(NANOPUB_PROFILE_NAME)))
+    nanopub.pubinfo.add((orcid_uri, FOAF.name, Literal(resolved_profile_name)))
     nanopub.pubinfo.add((nanopub_uri, DCTERMS.created, created_at))
     nanopub.pubinfo.add((nanopub_uri, DCTERMS.creator, orcid_uri))
     nanopub.pubinfo.add((nanopub_uri, DCTERMS.license, URIRef(NANOPUB_LICENSE_URI)))
@@ -1748,7 +1917,7 @@ def health() -> Dict[str, Any]:
         "prompt_dir_exists": PROMPT_DIR.exists(),
         "five_shot_dir_exists": FIVE_SHOT_DIR.exists(),
         "openrouter_key_set": bool(OPENROUTER_API_KEY),
-        "nanopub_publish_ready": bool(NANOPUB_PRIVATE_KEY and NANOPUB_ORCID_ID and NANOPUB_PROFILE_NAME),
+        "nanopub_publish_ready": bool(NANOPUB_PRIVATE_KEY and NANOPUB_ORCID_ID),
         "wikidata_linking_enabled": ENABLE_WIKIDATA_LINKING,
     }
 
@@ -1767,6 +1936,7 @@ def decompose_stream(req: DecomposeRequest) -> StreamingResponse:
             req.definition,
             disable_thinking=req.disable_thinking,
             model_name=req.model_name,
+            creator_orcid_id=req.creator_orcid_id,
         ),
         media_type="application/x-ndjson",
     )
@@ -1779,6 +1949,7 @@ def decompose(req: DecomposeRequest) -> DecomposeResponse:
             req.definition,
             disable_thinking=req.disable_thinking,
             model_name=req.model_name,
+            creator_orcid_id=req.creator_orcid_id,
         )
         return DecomposeResponse(**result)
     except ValueError as e:
@@ -1824,6 +1995,7 @@ def publish_nanopub(req: PublishNanopubRequest) -> PublishNanopubResponse:
             variable_uri=variable_uri,
             created_at=created_at,
             agent_uri=agent_uri,
+            creator_orcid_id=req.creator_orcid_id,
         )
 
         if assertion_label:
@@ -1855,7 +2027,11 @@ def retract_nanopub(req: RetractNanopubRequest) -> RetractNanopubResponse:
         target_nanopub_uri = _normalize_target_nanopub_uri(req.nanopub_uri)
         profile = get_nanopub_profile()
         _assert_retraction_allowed(target_nanopub_uri, profile)
-        retraction = _build_retraction_nanopub(target_nanopub_uri, profile)
+        retraction = _build_retraction_nanopub(
+            target_nanopub_uri,
+            profile,
+            creator_orcid_id=req.creator_orcid_id,
+        )
 
         # Publishing the custom retraction nanopub creates a new nanopub whose assertion retracts the target URI.
         publish_result = retraction.publish()
