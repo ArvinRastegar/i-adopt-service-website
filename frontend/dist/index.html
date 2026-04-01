@@ -4,8 +4,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>I-ADOPT Variable Decomposition & Visualizer</title>
-  <script type="module" crossorigin src="./assets/appMain-DpF7Puyz.js"></script>
+  <title>I-ADOPT Variable Decomposer & Visualizer</title>
+  <script type="module" crossorigin src="./assets/appMain-Bd3LQSFh.js"></script>
   <link rel="modulepreload" crossorigin href="./assets/error-CHeCPgED.js">
   <link rel="stylesheet" crossorigin href="./assets/error-B8NwTY9S.css">
   <link rel="stylesheet" crossorigin href="./assets/appMain-CKVdM5G7.css">
@@ -13,7 +13,7 @@
 
 <body data-bs-theme="dark">
   <header class="page-header">
-    <h1>I-ADOPT Variable Decomposition & Visualizer</h1>
+    <h1>I-ADOPT Variable Decomposer & Visualizer</h1>
     <p class="subtitle">
       Enter a variable definition, decompose it with the backend pipeline, inspect the output, and visualize the
       generated Turtle.
@@ -34,6 +34,10 @@
 
         <div class="action-row mb-4">
           <button id="decompose" class="btn btn-primary" type="button">Decompose</button>
+          <div class="form-check form-switch m-0">
+            <input class="form-check-input" type="checkbox" role="switch" id="disableThinkingToggle" />
+            <label class="form-check-label" for="disableThinkingToggle">Disable thinking</label>
+          </div>
           <span id="decomposeStatus" class="text-secondary"></span>
         </div>
 
@@ -149,7 +153,8 @@ ex:Matrix_SysB
         <div class="card-body">
           <h2 class="section-title">Retract Published Nanopublication</h2>
           <p class="text-secondary mb-3">
-            Choose one of the variable identifiers that this browser has published, then publish a retraction nanopublication for it.
+            Choose one of the variable identifiers that this browser has published, then publish a retraction
+            nanopublication for it.
           </p>
 
           <div class="row g-3 align-items-end">
@@ -167,12 +172,8 @@ ex:Matrix_SysB
 
           <div class="mt-3">
             <label for="retractInput" class="form-label">Or paste a nanopublication reference to retract</label>
-            <input
-              id="retractInput"
-              type="text"
-              class="form-control"
-              placeholder="Paste a https://w3id.org/np/RA... URI, raw RA identifier, or Nanodash explore link"
-            />
+            <input id="retractInput" type="text" class="form-control"
+              placeholder="Paste a https://w3id.org/np/RA... URI, raw RA identifier, or Nanodash explore link" />
           </div>
 
           <div id="retractStatus" class="mt-3 text-secondary" aria-live="polite"></div>

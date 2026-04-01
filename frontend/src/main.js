@@ -178,16 +178,19 @@ let isDecomposing = false;
 
 function setDecomposeButtonState(isLoading) {
   const button = document.querySelector('#decompose');
+  const thinkingToggle = document.querySelector('#disableThinkingToggle');
   if (!button) return;
 
   button.disabled = isLoading;
   button.textContent = isLoading ? 'Decomposing...' : 'Decompose';
   button.classList.toggle('is-loading', isLoading);
+  if (thinkingToggle) thinkingToggle.disabled = isLoading;
 }
 
 async function decomposeDefinition() {
   if (isDecomposing) return;
   const definition = document.querySelector('#definitionInput')?.value?.trim();
+  const disableThinking = Boolean(document.querySelector('#disableThinkingToggle')?.checked);
   const rawOutputEl = document.querySelector('#rawOutput');
   const ttlEl = document.querySelector('#input');
 
@@ -200,7 +203,9 @@ async function decomposeDefinition() {
   if (rawOutputEl) rawOutputEl.value = '';
   if (ttlEl) ttlEl.value = '';
   renderValidationErrors([]);
-  setDecomposeStatus('This is going to take a moment...');
+  setDecomposeStatus(
+    disableThinking ? 'This is going to take a moment. Thinking is disabled.' : 'This is going to take a moment...',
+  );
 
   try {
     isDecomposing = true;
@@ -208,7 +213,8 @@ async function decomposeDefinition() {
     const response = await fetch(`${BACKEND_URL}/decompose`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ definition }),
+      // The backend treats the absence of the override as normal thinking, so we only send a boolean flag here.
+      body: JSON.stringify({ definition, disable_thinking: disableThinking }),
     });
 
     const data = await response.json();

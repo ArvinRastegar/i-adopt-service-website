@@ -171,6 +171,10 @@ ONTO_KEYS = [
 
 class DecomposeRequest(BaseModel):
     definition: str = Field(..., min_length=1, description="Variable definition in plain text")
+    disable_thinking: bool = Field(
+        default=False,
+        description="When true, request the model without reasoning effort by sending `reasoning.effort = none`.",
+    )
 
 
 class DecomposeResponse(BaseModel):
@@ -422,22 +426,27 @@ def build_prompt(definition: str, prompt_version: str, examples: Optional[List[D
 # ======================================================================================
 
 
-def call_model(model: str, prompt: str, temperature: float) -> str:
+def call_model(model: str, prompt: str, temperature: float, disable_thinking: bool = False) -> str:
     client = get_openai_client()
 
     for attempt in range(1, 4):
         try:
-            resp = client.chat.completions.create(
-                model=model,
-                temperature=temperature,
-                messages=[{"role": "user", "content": prompt}],
-                timeout=60,
-                extra_body={
+            request_kwargs: Dict[str, Any] = {
+                "model": model,
+                "temperature": temperature,
+                "messages": [{"role": "user", "content": prompt}],
+                "timeout": 60,
+            }
+
+            # The default mode intentionally sends no reasoning override so the provider keeps its normal thinking behavior.
+            if disable_thinking:
+                request_kwargs["extra_body"] = {
                     "reasoning": {
-                        "effort": "none",  # or: "minimal", "low", "medium", "high"
+                        "effort": "none",
                     }
-                },
-            )
+                }
+
+            resp = client.chat.completions.create(**request_kwargs)
             text = resp.choices[0].message.content or ""
             stripped = text.strip()
 
@@ -489,11 +498,17 @@ def parse_llm_json(raw: str, definition: str) -> Dict[str, Any]:
     return coerce_prediction(data)
 
 
-def call_llm_loose(model: str, prompt: str, definition: str, temperature: float) -> Tuple[str, Dict[str, Any]]:
+def call_llm_loose(
+    model: str,
+    prompt: str,
+    definition: str,
+    temperature: float,
+    disable_thinking: bool = False,
+) -> Tuple[str, Dict[str, Any]]:
     last_raw = ""
 
     for attempt in range(1, 4):
-        raw = call_model(model, prompt, temperature)
+        raw = call_model(model, prompt, temperature, disable_thinking=disable_thinking)
         last_raw = raw
 
         if not raw.strip():
@@ -1104,7 +1119,7 @@ def json_to_ttl_repo_style(pred: Dict[str, Any]) -> str:
 # ======================================================================================
 
 
-def run_pipeline(definition: str) -> Dict[str, Any]:
+def run_pipeline(definition: str, disable_thinking: bool = False) -> Dict[str, Any]:
     definition = definition.strip()
     if not definition:
         raise ValueError("Definition must not be empty.")
@@ -1124,6 +1139,7 @@ def run_pipeline(definition: str) -> Dict[str, Any]:
         prompt,
         definition=definition,
         temperature=TEMPERATURE,
+        disable_thinking=disable_thinking,
     )
 
     if not pred:
@@ -1379,7 +1395,7 @@ def health() -> Dict[str, Any]:
 @app.post("/decompose", response_model=DecomposeResponse)
 def decompose(req: DecomposeRequest) -> DecomposeResponse:
     try:
-        result = run_pipeline(req.definition)
+        result = run_pipeline(req.definition, disable_thinking=req.disable_thinking)
         return DecomposeResponse(**result)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
