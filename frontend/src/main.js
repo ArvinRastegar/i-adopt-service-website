@@ -14,6 +14,12 @@ import { showError } from './ui/showError.js';
 
 const BACKEND_URL = 'http://localhost:8000';
 const PUBLISHED_NANOPUBS_STORAGE_KEY = 'iadopt-published-nanopubs';
+const FALLBACK_MODEL_NAME = 'qwen/qwen3.5-flash-02-23';
+const FALLBACK_MODEL_NAMES = [
+  'qwen/qwen3.5-flash-02-23',
+  'qwen/qwen3-32b',
+  'qwen/qwen3.5-397b-a17b',
+];
 
 function setDecomposeStatus(message, isError = false) {
   const el = document.querySelector('#decomposeStatus');
@@ -178,18 +184,57 @@ let isDecomposing = false;
 
 function setDecomposeButtonState(isLoading) {
   const button = document.querySelector('#decompose');
+  const modelSelect = document.querySelector('#modelSelect');
   const thinkingToggle = document.querySelector('#disableThinkingToggle');
   if (!button) return;
 
   button.disabled = isLoading;
   button.textContent = isLoading ? 'Decomposing...' : 'Decompose';
   button.classList.toggle('is-loading', isLoading);
+  if (modelSelect) modelSelect.disabled = isLoading;
   if (thinkingToggle) thinkingToggle.disabled = isLoading;
+}
+
+function renderModelOptions(modelNames = FALLBACK_MODEL_NAMES, defaultModelName = FALLBACK_MODEL_NAME) {
+  const modelSelect = document.querySelector('#modelSelect');
+  if (!modelSelect) return;
+
+  const uniqueModelNames = [...new Set((modelNames || []).filter(Boolean))];
+  const finalModelNames = uniqueModelNames.length ? uniqueModelNames : FALLBACK_MODEL_NAMES;
+  const selectedModelName = finalModelNames.includes(defaultModelName) ? defaultModelName : finalModelNames[0];
+
+  modelSelect.innerHTML = '';
+
+  for (const modelName of finalModelNames) {
+    const option = document.createElement('option');
+    option.value = modelName;
+    option.textContent = modelName;
+    option.selected = modelName === selectedModelName;
+    modelSelect.appendChild(option);
+  }
+}
+
+async function loadModelOptions() {
+  try {
+    const response = await fetch(`${BACKEND_URL}/model-options`);
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.detail || 'Could not load model options.');
+    }
+
+    renderModelOptions(data.model_names, data.default_model_name);
+  } catch (e) {
+    console.error(e);
+    // Keep the dropdown usable even if the backend config endpoint is temporarily unavailable.
+    renderModelOptions();
+  }
 }
 
 async function decomposeDefinition() {
   if (isDecomposing) return;
   const definition = document.querySelector('#definitionInput')?.value?.trim();
+  const modelName = document.querySelector('#modelSelect')?.value?.trim() || FALLBACK_MODEL_NAME;
   const disableThinking = Boolean(document.querySelector('#disableThinkingToggle')?.checked);
   const rawOutputEl = document.querySelector('#rawOutput');
   const ttlEl = document.querySelector('#input');
@@ -214,7 +259,7 @@ async function decomposeDefinition() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       // The backend treats the absence of the override as normal thinking, so we only send a boolean flag here.
-      body: JSON.stringify({ definition, disable_thinking: disableThinking }),
+      body: JSON.stringify({ definition, model_name: modelName, disable_thinking: disableThinking }),
     });
 
     const data = await response.json();
@@ -386,6 +431,7 @@ if (initialTTL) {
   document.querySelector('#visualize')?.click();
 }
 
+loadModelOptions();
 renderRetractOptions();
 
 document.querySelector('#export')

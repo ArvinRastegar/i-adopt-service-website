@@ -89,8 +89,15 @@ SCHEMA_PATH = DATA_DIR / "Json_schema.json"
 PROMPT_DIR = DATA_DIR / "prompts"
 FIVE_SHOT_DIR = DATA_DIR / "Json_preferred" / "five_shot"
 
+DEFAULT_MODEL_NAME = "qwen/qwen3.5-flash-02-23"
+DEFAULT_MODEL_NAMES = [
+    "qwen/qwen3.5-flash-02-23",
+    "qwen/qwen3-32b",
+    "qwen/qwen3.5-397b-a17b",
+]
+
 # MODEL_NAME = os.getenv("MODEL_NAME", "qwen/qwen3.5-397b-a17b")
-MODEL_NAME = os.getenv("MODEL_NAME", "qwen/qwen3.5-flash-02-23")
+MODEL_NAME = os.getenv("MODEL_NAME", DEFAULT_MODEL_NAME)
 # MODEL_NAME = os.getenv("MODEL_NAME", "qwen/qwen3-32b")
 # MODEL_NAME = os.getenv("MODEL_NAME", "google/gemini-3-flash-preview")
 
@@ -164,6 +171,32 @@ ONTO_KEYS = [
 ]
 
 
+def _dedupe_preserve_order(values: List[str]) -> List[str]:
+    seen = set()
+    ordered: List[str] = []
+
+    for value in values:
+        clean_value = value.strip()
+        if not clean_value or clean_value in seen:
+            continue
+        seen.add(clean_value)
+        ordered.append(clean_value)
+
+    return ordered
+
+
+def _load_model_names() -> List[str]:
+    configured = os.getenv("MODEL_NAMES", "")
+    configured_models = [value.strip() for value in configured.split(",") if value.strip()]
+
+    # When MODEL_NAMES is not provided, keep the small built-in fallback list available in the UI.
+    base_models = configured_models or DEFAULT_MODEL_NAMES
+    return _dedupe_preserve_order([MODEL_NAME, *base_models])
+
+
+MODEL_NAMES = _load_model_names()
+
+
 # ======================================================================================
 # Request/response models
 # ======================================================================================
@@ -171,6 +204,7 @@ ONTO_KEYS = [
 
 class DecomposeRequest(BaseModel):
     definition: str = Field(..., min_length=1, description="Variable definition in plain text")
+    model_name: Optional[str] = Field(default=None, description="One of the backend-configured model names to use.")
     disable_thinking: bool = Field(
         default=False,
         description="When true, request the model without reasoning effort by sending `reasoning.effort = none`.",
@@ -184,6 +218,11 @@ class DecomposeResponse(BaseModel):
     validation_errors: List[str]
     enriched_json: Dict[str, Any]
     ttl: str
+
+
+class ModelOptionsResponse(BaseModel):
+    default_model_name: str
+    model_names: List[str]
 
 
 class PublishNanopubRequest(BaseModel):
@@ -496,6 +535,20 @@ def parse_llm_json(raw: str, definition: str) -> Dict[str, Any]:
 
     data["definition"] = definition
     return coerce_prediction(data)
+
+
+def _resolve_model_name(requested_model_name: Optional[str]) -> str:
+    selected_model = (requested_model_name or MODEL_NAME).strip()
+
+    if not selected_model:
+        selected_model = MODEL_NAME
+
+    if selected_model not in MODEL_NAMES:
+        raise ValueError(
+            f"Unsupported model '{selected_model}'. Allowed models: {', '.join(MODEL_NAMES)}"
+        )
+
+    return selected_model
 
 
 def call_llm_loose(
@@ -1119,7 +1172,7 @@ def json_to_ttl_repo_style(pred: Dict[str, Any]) -> str:
 # ======================================================================================
 
 
-def run_pipeline(definition: str, disable_thinking: bool = False) -> Dict[str, Any]:
+def run_pipeline(definition: str, disable_thinking: bool = False, model_name: Optional[str] = None) -> Dict[str, Any]:
     definition = definition.strip()
     if not definition:
         raise ValueError("Definition must not be empty.")
@@ -1133,9 +1186,10 @@ def run_pipeline(definition: str, disable_thinking: bool = False) -> Dict[str, A
 
     examples_5 = _examples_5_cache if _examples_5_cache is not None else load_examples(FIVE_SHOT_DIR, 5)
     prompt = build_prompt(definition, prompt_version=prompt_version, examples=examples_5)
+    selected_model_name = _resolve_model_name(model_name)
 
     raw_llm_output, pred = call_llm_loose(
-        MODEL_NAME,
+        selected_model_name,
         prompt,
         definition=definition,
         temperature=TEMPERATURE,
@@ -1392,10 +1446,20 @@ def health() -> Dict[str, Any]:
     }
 
 
+@app.get("/model-options", response_model=ModelOptionsResponse)
+def model_options() -> ModelOptionsResponse:
+    """Expose the backend-managed list of allowed model names for the frontend dropdown."""
+    return ModelOptionsResponse(default_model_name=MODEL_NAME, model_names=MODEL_NAMES)
+
+
 @app.post("/decompose", response_model=DecomposeResponse)
 def decompose(req: DecomposeRequest) -> DecomposeResponse:
     try:
-        result = run_pipeline(req.definition, disable_thinking=req.disable_thinking)
+        result = run_pipeline(
+            req.definition,
+            disable_thinking=req.disable_thinking,
+            model_name=req.model_name,
+        )
         return DecomposeResponse(**result)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e

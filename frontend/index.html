@@ -30,6 +30,12 @@
 
         <div class="action-row mb-4">
           <button id="decompose" class="btn btn-primary" type="button">Decompose</button>
+          <div class="model-select-group">
+            <label class="form-label mb-0" for="modelSelect">Model</label>
+            <select id="modelSelect" class="form-select" aria-label="Model selection">
+              <option value="qwen/qwen3.5-flash-02-23">qwen/qwen3.5-flash-02-23</option>
+            </select>
+          </div>
           <div class="form-check form-switch m-0">
             <input class="form-check-input" type="checkbox" role="switch" id="disableThinkingToggle" />
             <label class="form-check-label" for="disableThinkingToggle">Disable thinking</label>

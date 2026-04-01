@@ -42,6 +42,16 @@ body {
   gap: 0.75rem;
 }
 
+.model-select-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.model-select-group .form-select {
+  min-width: 280px;
+}
+
 svg {
   width: 60%;
   min-width: 600px;
