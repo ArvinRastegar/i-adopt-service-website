@@ -3,7 +3,7 @@ import { Concept, Constraint, Entity, Variable,
   VALID_ASYMMETRIC_SYSTEM_PROPERTY_PAIRS, VALID_SYMMETRIC_SYSTEM_PROPERTIES } from '../model/models';
 import triggerRedraw from './triggerRedraw';
 import { state as STATE } from './editor/state';
-import toTurtle from '../model/toTurtle';
+import mergeCurrentTurtle from './mergeCurrentTurtle';
 
 // type selector classes
 const TYPE_SELECT_CLASSES = [ 'comp', 'constraint', 'entity', 'ooi', 'matrix', 'context', 'property', 'statmod', 'variable' ];
@@ -128,7 +128,7 @@ function updateTypeSelector() {
  * @param {Event} e event triggered
  * @returns
  */
-function triggerAction(e) {
+async function triggerAction(e) {
 
   // shortcut
   const action = e.target;
@@ -237,7 +237,7 @@ function triggerAction(e) {
 
     // update UI
     triggerRedraw( STATE.variable );
-    ELEMENTS.input.value = toTurtle( STATE.variable );
+    ELEMENTS.input.value = await mergeCurrentTurtle( ELEMENTS.input.value, STATE.variable );
 
     return;
 
@@ -250,7 +250,7 @@ function triggerAction(e) {
 /**
  * save the current content of the form
  */
-function saveForm(){
+async function saveForm(){
 
   // add item
   if( STATE.sourceComp && !STATE.editComp ) {
@@ -408,7 +408,7 @@ function saveForm(){
   clearForm();
 
   // update serialization
-  ELEMENTS.input.value = toTurtle( STATE.variable );
+  ELEMENTS.input.value = await mergeCurrentTurtle( ELEMENTS.input.value, STATE.variable );
 
   // trigger redraw
   triggerRedraw( STATE.variable );
