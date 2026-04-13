@@ -1806,6 +1806,8 @@ def _build_retraction_nanopub(
     """Create the richer retraction nanopub shape that the production registries currently accept."""
     resolved_orcid, resolved_profile_name = _resolve_creator_metadata(creator_orcid_id)
     orcid_uri = URIRef(resolved_orcid)
+    agent_uri = get_nanopub_agent_uri()
+    pubinfo_creator_uri = URIRef(agent_uri) if agent_uri else orcid_uri
     target_identifier = target_nanopub_uri.rsplit("/", 1)[-1]
     retraction_label = f"Retraction of {target_identifier[:10]}"
 
@@ -1826,9 +1828,11 @@ def _build_retraction_nanopub(
 
     # The registries accept retractions when they mirror the current Nanodash-style pubinfo shape.
     nanopub.provenance.add((nanopub.assertion.identifier, PROV.wasAttributedTo, orcid_uri))
+    if agent_uri:
+        nanopub.provenance.add((nanopub.assertion.identifier, PROV.wasGeneratedBy, URIRef(agent_uri)))
     nanopub.pubinfo.add((orcid_uri, FOAF.name, Literal(resolved_profile_name)))
     nanopub.pubinfo.add((nanopub.metadata.namespace[""], DCTERMS.created, _nanopub_created_literal()))
-    nanopub.pubinfo.add((nanopub.metadata.namespace[""], DCTERMS.creator, orcid_uri))
+    nanopub.pubinfo.add((nanopub.metadata.namespace[""], DCTERMS.creator, pubinfo_creator_uri))
     nanopub.pubinfo.add((nanopub.metadata.namespace[""], DCTERMS.license, URIRef(NANOPUB_LICENSE_URI)))
     nanopub.pubinfo.add((nanopub.metadata.namespace[""], NPX.hasNanopubType, NPX.retracts))
     nanopub.pubinfo.add((nanopub.metadata.namespace[""], NPX["wasCreatedAt"], URIRef(NANOPUB_WAS_CREATED_AT)))
@@ -1876,6 +1880,7 @@ def _add_nanopub_metadata(
     nanopub_uri = nanopub.metadata.namespace[""]
     resolved_orcid, resolved_profile_name = _resolve_creator_metadata(creator_orcid_id)
     orcid_uri = URIRef(resolved_orcid)
+    pubinfo_creator_uri = URIRef(agent_uri) if agent_uri else orcid_uri
 
     # The provenance graph must describe who is responsible for the assertion and which software agent generated it.
     nanopub.provenance.add((nanopub.assertion.identifier, PROV.wasAttributedTo, orcid_uri))
@@ -1885,7 +1890,7 @@ def _add_nanopub_metadata(
     # The publication info graph mirrors the creator, license, template, and software metadata requested by the user.
     nanopub.pubinfo.add((orcid_uri, FOAF.name, Literal(resolved_profile_name)))
     nanopub.pubinfo.add((nanopub_uri, DCTERMS.created, created_at))
-    nanopub.pubinfo.add((nanopub_uri, DCTERMS.creator, orcid_uri))
+    nanopub.pubinfo.add((nanopub_uri, DCTERMS.creator, pubinfo_creator_uri))
     nanopub.pubinfo.add((nanopub_uri, DCTERMS.license, URIRef(NANOPUB_LICENSE_URI)))
     nanopub.pubinfo.add((nanopub_uri, NPX.introduces, variable_uri))
     nanopub.pubinfo.add((nanopub_uri, NPX["wasCreatedAt"], URIRef(NANOPUB_WAS_CREATED_AT)))
