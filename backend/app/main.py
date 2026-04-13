@@ -269,6 +269,7 @@ _openai_client: Optional[OpenAI] = None
 _reranker: Optional[CrossEncoder] = None
 _nanopub_profile: Optional[Profile] = None
 _nanopub_agent_uri_cache: Optional[str] = None
+_nanopub_agent_label_cache: Optional[str] = None
 _orcid_name_cache: Dict[str, Optional[str]] = {}
 
 
@@ -469,15 +470,18 @@ def get_nanopub_profile() -> Profile:
         if missing:
             raise RuntimeError(f"Missing nanopub publishing configuration: {', '.join(missing)}")
 
-        signing_orcid = _normalize_orcid(NANOPUB_ORCID_ID)
-        signing_name = _lookup_orcid_display_name(signing_orcid)
+        agent_uri = get_nanopub_agent_uri()
+        signing_uri = agent_uri or _normalize_orcid(NANOPUB_ORCID_ID)
+        signing_name = get_nanopub_agent_label() if agent_uri else _lookup_orcid_display_name(signing_uri)
         if not signing_name:
             raise RuntimeError(
-                "No signing profile name is available from NANOPUB_ORCID_ID. Use an ORCID with a public name."
+                "No signing profile name is available from the configured software-agent intro or ORCID."
             )
 
         _nanopub_profile = Profile(
-            orcid_id=signing_orcid,
+            # `nanopub-py` names this argument `orcid_id`, but it writes it directly to `npx:signedBy`.
+            # When the private/public key pair belongs to the service, the signer URI must be the service URI.
+            orcid_id=signing_uri,
             name=signing_name,
             private_key=_normalize_nanopub_key(NANOPUB_PRIVATE_KEY),
             public_key=_normalize_nanopub_key(NANOPUB_PUBLIC_KEY),
@@ -488,7 +492,7 @@ def get_nanopub_profile() -> Profile:
 
 def get_nanopub_agent_uri() -> Optional[str]:
     """Resolve the software-agent concept URI from its introduction nanopub once and cache it for reuse."""
-    global _nanopub_agent_uri_cache
+    global _nanopub_agent_uri_cache, _nanopub_agent_label_cache
 
     if _nanopub_agent_uri_cache:
         return _nanopub_agent_uri_cache
@@ -505,7 +509,25 @@ def get_nanopub_agent_uri() -> Optional[str]:
         )
 
     _nanopub_agent_uri_cache = str(introduced_concept)
+    concept_ref = URIRef(_nanopub_agent_uri_cache)
+    for graph in (intro_nanopub.assertion, intro_nanopub.pubinfo, intro_nanopub.rdf):
+        for predicate in (RDFS.label, SKOS.prefLabel, FOAF.name):
+            label = graph.value(concept_ref, predicate)
+            if label and str(label).strip():
+                _nanopub_agent_label_cache = str(label).strip()
+                return _nanopub_agent_uri_cache
     return _nanopub_agent_uri_cache
+
+
+def get_nanopub_agent_label() -> Optional[str]:
+    """Return the software-agent label resolved from the introduction nanopub, falling back to its URI slug."""
+    agent_uri = get_nanopub_agent_uri()
+    if not agent_uri:
+        return None
+    if _nanopub_agent_label_cache:
+        return _nanopub_agent_label_cache
+    slug = urllib.parse.unquote(agent_uri.rstrip("/#").rsplit("/", 1)[-1].rsplit("#", 1)[-1])
+    return _normalize_text(slug.replace("_", " ").replace("-", " "))
 
 
 def get_http_session() -> requests.Session:
