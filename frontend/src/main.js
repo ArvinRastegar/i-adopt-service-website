@@ -173,6 +173,7 @@ async function visualizeTTL() {
     triggerRedraw(content[0]);
     await addEditor();
     document.querySelector('#export').classList.remove('invisible');
+    document.querySelector('#publishNanopubButton')?.classList.remove('invisible');
 
   } catch (e) {
     console.error(e);
@@ -554,10 +555,6 @@ document.querySelector('#export')
           ext = 'ttl';
           break;
 
-        case 'nanopub':
-          await publishNanopub();
-          return;
-
         default:
           throw Error('Unknown export format!');
       }
@@ -574,6 +571,15 @@ document.querySelector('#export')
       downloadLink.click();
       document.body.removeChild(downloadLink);
 
+    } catch (e) {
+      console.error(e);
+    }
+  });
+
+document.querySelector('#publishNanopubButton')
+  ?.addEventListener('click', async () => {
+    try {
+      await publishNanopub();
     } catch (e) {
       console.error(e);
     }
