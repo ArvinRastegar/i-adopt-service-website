@@ -1,0 +1,118 @@
+name: Bug report
+description: Report a bug in the UI, backend, visualization, or general service behavior.
+title: "[Bug]: "
+labels:
+  - bug
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please fill in the sections below so we can reproduce and fix it.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the bug clearly and briefly.
+      placeholder: Tell us what you tried and what went wrong.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: List the exact steps needed to reproduce the problem.
+      placeholder: |
+        1. Open ...
+        2. Enter ...
+        3. Click ...
+        4. See error ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What actually happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: errors
+    attributes:
+      label: Error message or console output
+      description: Paste the exact error message, stack trace, or relevant log lines.
+      render: shell
+      placeholder: Paste the exact error here.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Where are you running the service?
+      description: Select the environment where you saw the bug.
+      options:
+        - Public or shared instance
+        - Local run via Docker
+        - Local run via terminal
+    validations:
+      required: true
+
+  - type: input
+    id: instance_url
+    attributes:
+      label: Instance URL
+      description: If you selected a public or shared instance, paste its URL here.
+      placeholder: https://...
+    validations:
+      required: false
+
+  - type: input
+    id: browser
+    attributes:
+      label: Browser
+      description: If relevant, include the browser and version.
+      placeholder: Chrome 135, Firefox 127, Safari 18
+    validations:
+      required: false
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      description: If relevant, include your OS and version.
+      placeholder: macOS 15, Ubuntu 24.04, Windows 11
+    validations:
+      required: false
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots or extra context
+      description: Add screenshots, copied output, or any other details that may help.
+      placeholder: Drag screenshots here or paste additional details.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and did not find a duplicate.
+          required: true
+        - label: I included enough detail for someone else to reproduce the problem.
+          required: true
+

@@ -1,0 +1,97 @@
+name: Decomposition or TTL issue
+description: Report a problem with model decomposition, validation, TTL generation, or visualization.
+title: "[Decomposition/TTL]: "
+labels:
+  - bug
+  - llm
+  - ttl
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form when the service decomposes a definition incorrectly, generates wrong TTL, or fails to visualize a variable.
+
+  - type: textarea
+    id: definition
+    attributes:
+      label: Variable definition
+      description: Paste the exact natural-language definition you entered.
+      placeholder: I am measuring air temp at 1.7 meter height.
+    validations:
+      required: true
+
+  - type: input
+    id: model
+    attributes:
+      label: Selected model
+      description: Which model did you use?
+      placeholder: qwen/qwen3.5-flash-02-23
+    validations:
+      required: true
+
+  - type: dropdown
+    id: thinking
+    attributes:
+      label: Disable thinking toggle
+      options:
+        - Disabled thinking was OFF
+        - Disabled thinking was ON
+        - I do not know
+    validations:
+      required: true
+
+  - type: textarea
+    id: raw_output
+    attributes:
+      label: Raw LLM output
+      description: Paste the raw model output shown by the service.
+      render: json
+    validations:
+      required: false
+
+  - type: textarea
+    id: ttl
+    attributes:
+      label: Generated TTL
+      description: Paste the TTL that the service produced.
+      render: turtle
+    validations:
+      required: false
+
+  - type: textarea
+    id: validation_errors
+    attributes:
+      label: Validation or visualization errors
+      description: Paste any schema validation errors or visualization errors you saw.
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: wrong_part
+    attributes:
+      label: What is wrong?
+      description: Explain what part of the decomposition or TTL is incorrect.
+      placeholder: The constraint is attached to the variable instead of the object of interest.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect instead?
+      description: Describe the correct decomposition, TTL, or visualization.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I used the exact definition and output shown above.
+          required: true
+        - label: I searched existing issues and did not find a duplicate.
+          required: true
+

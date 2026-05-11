@@ -1,0 +1,59 @@
+name: Feature request
+description: Suggest an improvement to the UI, workflow, decomposition pipeline, or nanopub support.
+title: "[Feature]: "
+labels:
+  - feature
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion. Please describe the problem first, then the improvement you want.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Describe the current limitation, friction, or missing behavior.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the feature or change you would like to see.
+    validations:
+      required: true
+
+  - type: textarea
+    id: benefit
+    attributes:
+      label: Why would this help?
+      description: Explain the value for users, maintainers, or the workflow.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: If you considered another approach, describe it here.
+    validations:
+      required: false
+
+  - type: textarea
+    id: mockups
+    attributes:
+      label: Mockups, examples, or extra context
+      description: Add screenshots, links, sketches, or examples if helpful.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and did not find a duplicate request.
+          required: true

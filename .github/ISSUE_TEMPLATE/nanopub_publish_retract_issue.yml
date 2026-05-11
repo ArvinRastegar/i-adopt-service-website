@@ -1,0 +1,96 @@
+name: Nanopub publish or retract issue
+description: Report a problem with nanopublication publishing, signature metadata, or retraction.
+title: "[Nanopub]: "
+labels:
+  - bug
+  - nanopub
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for problems with nanopub publication, signature metadata, generated provenance, or retraction.
+
+  - type: dropdown
+    id: action
+    attributes:
+      label: What were you trying to do?
+      options:
+        - Publish a nanopublication
+        - Retract a nanopublication
+        - Both publish and retract
+    validations:
+      required: true
+
+  - type: textarea
+    id: ttl
+    attributes:
+      label: TTL used
+      description: Paste the TTL that you tried to publish, if relevant.
+      render: turtle
+    validations:
+      required: false
+
+  - type: input
+    id: creator_orcid
+    attributes:
+      label: Creator ORCID used
+      description: Paste the ORCID used in the frontend, or state that the default `.env` value was used.
+      placeholder: https://orcid.org/0000-0000-0000-0000
+    validations:
+      required: false
+
+  - type: input
+    id: target_nanopub
+    attributes:
+      label: Target nanopub URL
+      description: If this was a retraction issue, paste the nanopub URL or Nanodash link you tried to retract.
+      placeholder: https://w3id.org/np/RA...
+    validations:
+      required: false
+
+  - type: input
+    id: result_nanopub
+    attributes:
+      label: Resulting nanopub URL
+      description: If publication or retraction created a nanopub, paste the resulting URL.
+      placeholder: https://w3id.org/np/RA...
+    validations:
+      required: false
+
+  - type: textarea
+    id: error
+    attributes:
+      label: Exact error message
+      description: Paste the exact backend, frontend, or registry error message.
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: metadata_problem
+    attributes:
+      label: Metadata or signature problem
+      description: If the issue is about `created by`, `signed by`, attribution, or provenance, explain exactly what looked wrong.
+      placeholder: The nanopub uses the service public key but still says it was signed by a person.
+    validations:
+      required: false
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened instead?
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I included the exact nanopub URL or error text relevant to this issue.
+          required: true
+        - label: I searched existing issues and did not find a duplicate.
+          required: true
+
